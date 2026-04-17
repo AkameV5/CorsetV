@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="32dp"
+    android:gravity="center"
+    android:background="#F5F7FA">
+
+    <ImageView
+        android:layout_width="80dp"
+        android:layout_height="80dp"
+        android:src="@android:drawable/ic_dialog_email"
+        android:layout_marginBottom="24dp"
+        app:tint="#FF9800"/>
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Подтвердите почту"
+        android:textSize="24sp"
+        android:textStyle="bold"
+        android:textColor="#2D3436"
+        android:layout_marginBottom="16dp"/>
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Мы отправили ссылку для подтверждения на адрес:"
+        android:gravity="center"
+        android:textSize="16sp"
+        android:textColor="#757575"
+        android:layout_marginBottom="8dp"/>
+
+    <!-- ВОТ СЮДА БУДЕТ ПОДСТАВЛЯТЬСЯ ПОЧТА -->
+    <TextView
+        android:id="@+id/tv_email_address"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="user@example.com"
+        android:textSize="18sp"
+        android:textStyle="bold"
+        android:textColor="#2D3436"
+        android:layout_marginBottom="32dp"/>
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/btn_check_verification"
+        android:layout_width="match_parent"
+        android:layout_height="60dp"
+        android:text="Я подтвердил"
+        android:textSize="16sp"
+        app:cornerRadius="12dp"
+        android:backgroundTint="#FF9800"/>
+
+    <TextView
+        android:id="@+id/tv_resend"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Отправить письмо еще раз"
+        android:layout_marginTop="24dp"
+        android:textColor="#FF9800"
+        android:textStyle="bold"/>
+
+</LinearLayout>
