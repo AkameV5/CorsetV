@@ -2,26 +2,18 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
-    <!-- ВАЖНО: Разрешения должны быть ЗДЕСЬ, ДО тега <application> -->
     <uses-permission android:name="android.permission.INTERNET" />
-    <!-- Основные разрешения для Bluetooth -->
     <uses-permission android:name="android.permission.BLUETOOTH" />
     <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
-
-    <!-- Разрешения для Android 12+ (API 31+) -->
     <uses-permission android:name="android.permission.BLUETOOTH_SCAN" />
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
-
-    <!-- ВАЖНО: Разрешения для работы в фоне (Служба) -->
-    <!-- Без этой строчки приложение вылетит с ошибкой SecurityException -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <!-- Это нужно специально для Android 14+ -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
 
     <application
-        android:name=".MyApplication"
+        android:name=".CorsetApplication"
         android:allowBackup="true"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules"
@@ -33,7 +25,7 @@
         tools:targetApi="31">
 
         <activity
-            android:name=".LoginActivity"
+            android:name=".MainActivity"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -41,19 +33,8 @@
             </intent-filter>
         </activity>
 
-        <activity android:name=".RegisterActivity" />
-        <activity android:name=".VerificationActivity" />
-        <activity android:name=".SetupProfileActivity" />
-        <activity android:name=".HomeActivity" />
-        <activity android:name=".ProfileActivity" />
-        <activity android:name=".AddDeviceActivity" />
-        <activity android:name=".ConnectingActivity" />
-        <activity android:name=".AiCoachActivity" />
-        <activity android:name=".AiChatActivity" />
-
-        <!-- Регистрируем сервис с правильным типом -->
         <service
-            android:name=".BluetoothLeService"
+            android:name=".data.bluetooth.BluetoothLeService"
             android:enabled="true"
             android:exported="false"
             android:foregroundServiceType="connectedDevice" />
