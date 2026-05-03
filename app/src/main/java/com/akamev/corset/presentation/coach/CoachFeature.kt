@@ -2,6 +2,7 @@ package com.akamev.corset.presentation.coach
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,6 +17,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -34,7 +36,7 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.akamev.corset.CorsetApplication
 import com.akamev.corset.domain.model.CoachFilter
-import com.akamev.corset.domain.model.DailyStats
+import com.akamev.corset.domain.model.PostureAlertMode
 import com.akamev.corset.domain.model.PosturePoint
 import com.akamev.corset.domain.model.Telemetry
 import com.akamev.corset.presentation.common.CorsetBackground
@@ -51,14 +53,19 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.util.Locale
 import kotlin.math.abs
+import kotlin.math.roundToInt
 
-private const val MOTOR_THRESHOLD = 5f
+private const val DEFAULT_THRESHOLD = 5f
+private const val MIN_CUSTOM_THRESHOLD = 3f
+private const val MAX_CUSTOM_THRESHOLD = 12f
 
 data class CoachUiState(
     val isMonitoringStarted: Boolean = false,
     val score: Int = 100,
     val currentAngle: Float? = null,
-    val thresholdAngle: Float = MOTOR_THRESHOLD,
+    val thresholdAngle: Float = DEFAULT_THRESHOLD,
+    val alertMode: PostureAlertMode = PostureAlertMode.Precise,
+    val customAlertAngle: Float = 7f,
     val aiAdvice: String = "Нажмите «Откалибровать» в профиле, чтобы начать отслеживание.",
     val isAiLoading: Boolean = false,
     val selectedFilter: CoachFilter = CoachFilter.Live,
@@ -73,18 +80,31 @@ class CoachViewModel(
     val uiState: StateFlow<CoachUiState> = _uiState.asStateFlow()
 
     private val historyPoints = mutableListOf<PosturePoint>()
-    private var dailyStats = app.container.appPreferences.loadDailyStats()
     private var baselineAngle = app.container.appPreferences.getBaselineAngle()
+    private var alertMode = app.container.appPreferences.getAlertMode()
+    private var customAlertAngle = app.container.appPreferences.getCustomAlertAngle()
     private var isAiBusy = false
 
     init {
         loadHistory()
+        refreshAlertSettings(pushToDevice = false)
         observeTelemetry()
         refreshMonitoringState()
     }
 
     fun selectFilter(filter: CoachFilter) {
         _uiState.update { it.copy(selectedFilter = filter, chartPoints = computeChartPoints(filter)) }
+    }
+
+    fun selectAlertMode(mode: PostureAlertMode) {
+        app.container.appPreferences.saveAlertMode(mode)
+        refreshAlertSettings()
+    }
+
+    fun updateCustomAlertAngle(value: Float) {
+        val normalized = ((value * 2f).roundToInt() / 2f).coerceIn(MIN_CUSTOM_THRESHOLD, MAX_CUSTOM_THRESHOLD)
+        app.container.appPreferences.saveCustomAlertAngle(normalized)
+        refreshAlertSettings()
     }
 
     private fun refreshMonitoringState() {
@@ -95,14 +115,30 @@ class CoachViewModel(
                 isMonitoringStarted = isMonitoringStarted,
                 aiAdvice = if (isMonitoringStarted) {
                     if (baselineAngle == null) {
-                        "Мониторинг запущен. Ждем первые данные, чтобы зафиксировать опорное положение."
+                        "Мониторинг запущен. Ждём первые данные, чтобы зафиксировать опорное положение."
                     } else {
-                        "Опорный угол: ${String.format(Locale.getDefault(), "%.1f°", baselineAngle)}"
+                        "Опорный угол: ${formatAngle(baselineAngle ?: 0f)}"
                     }
                 } else {
                     "Нажмите «Откалибровать» в профиле, чтобы начать отслеживание."
                 },
             )
+        }
+    }
+
+    private fun refreshAlertSettings(pushToDevice: Boolean = true) {
+        alertMode = app.container.appPreferences.getAlertMode()
+        customAlertAngle = app.container.appPreferences.getCustomAlertAngle()
+        val threshold = currentAlertThreshold()
+        _uiState.update {
+            it.copy(
+                alertMode = alertMode,
+                customAlertAngle = customAlertAngle,
+                thresholdAngle = threshold,
+            )
+        }
+        if (pushToDevice) {
+            app.container.bluetoothController.updateAlertThreshold(threshold)
         }
     }
 
@@ -138,43 +174,21 @@ class CoachViewModel(
         if (historyPoints.size > 10_000) {
             historyPoints.removeAt(0)
         }
-        app.container.postureHistoryLocalDataSource.savePoint(now, deviation)
 
-        val isComfortable = telemetry.motorOn?.not() ?: (deviation < MOTOR_THRESHOLD)
-        val todayKey = app.container.appPreferences.todayKey()
-        dailyStats = if (dailyStats.dateKey == todayKey) {
-            dailyStats.copy(
-                goodFrames = dailyStats.goodFrames + if (isComfortable) 1 else 0,
-                totalFrames = dailyStats.totalFrames + 1,
-            )
-        } else {
-            DailyStats(
-                dateKey = todayKey,
-                goodFrames = if (isComfortable) 1 else 0,
-                totalFrames = 1,
-            )
-        }
-
-        if (dailyStats.totalFrames % 20L == 0L) {
-            app.container.appPreferences.saveDailyStats(dailyStats)
-        }
-
-        val score = if (dailyStats.totalFrames == 0L) {
-            100
-        } else {
-            ((dailyStats.goodFrames.toFloat() / dailyStats.totalFrames.toFloat()) * 100f).toInt()
-        }
+        val threshold = currentAlertThreshold()
+        val score = computeScore(threshold)
+        val todayPointsCount = todayPoints().size
 
         _uiState.update {
             it.copy(
                 score = score,
                 currentAngle = deviation,
-                thresholdAngle = MOTOR_THRESHOLD,
+                thresholdAngle = threshold,
                 chartPoints = computeChartPoints(it.selectedFilter),
             )
         }
 
-        if (!isAiBusy && (dailyStats.totalFrames == 10L || (dailyStats.totalFrames > 10L && dailyStats.totalFrames % 200L == 0L))) {
+        if (!isAiBusy && (todayPointsCount == 10 || (todayPointsCount > 10 && todayPointsCount % 200 == 0))) {
             requestAdvice(score = score, averageAngle = averageAngle(20 * 60 * 1000L))
         }
     }
@@ -196,13 +210,27 @@ class CoachViewModel(
         return slice.sumOf { it.angle.toDouble() }.toFloat() / slice.size
     }
 
+    private fun todayPoints(): List<PosturePoint> {
+        val startOfDay = System.currentTimeMillis() - (24 * 60 * 60 * 1000L)
+        return historyPoints.filter { it.timestamp >= startOfDay }
+    }
+
+    private fun computeScore(threshold: Float): Int {
+        val points = todayPoints()
+        if (points.isEmpty()) return 100
+        val goodPoints = points.count { it.angle <= threshold }
+        return ((goodPoints.toFloat() / points.size.toFloat()) * 100f).roundToInt()
+    }
+
+    private fun currentAlertThreshold(): Float = alertMode.resolveAngle(customAlertAngle)
+
     private fun requestAdvice(score: Int, averageAngle: Float) {
         isAiBusy = true
         _uiState.update { it.copy(isAiLoading = true) }
         viewModelScope.launch {
             val prompt = "Анализ осанки. Среднее отклонение за 20 минут: ${
                 String.format(Locale.US, "%.1f", averageAngle)
-            } градусов. Оценка: $score%. Дай один короткий совет на русском языке."
+            } градусов. Порог реакции: ${String.format(Locale.US, "%.1f", currentAlertThreshold())} градусов. Оценка: $score%. Дай один короткий совет на русском языке."
             val advice = runCatching {
                 app.container.aiRemoteDataSource.requestText(prompt)
             }.getOrElse {
@@ -252,6 +280,53 @@ fun CoachScreen(
                     title = "Мониторинг",
                     subtitle = "Текущий угол отклонения, история за выбранный период и краткие рекомендации по осанке.",
                 )
+                GlassCard {
+                    Column(
+                        modifier = Modifier.padding(20.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        Text("Режим напоминаний", style = MaterialTheme.typography.titleLarge)
+                        Text(
+                            text = "${state.alertMode.title} • ${formatAngle(state.thresholdAngle)}",
+                            style = MaterialTheme.typography.bodyLarge,
+                        )
+                        Text(
+                            text = state.alertMode.description,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Row(
+                            modifier = Modifier.horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            PostureAlertMode.entries.forEach { mode ->
+                                FilterChip(
+                                    selected = state.alertMode == mode,
+                                    onClick = { viewModel.selectAlertMode(mode) },
+                                    label = { Text(mode.title) },
+                                )
+                            }
+                        }
+                        if (state.alertMode == PostureAlertMode.Custom) {
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text(
+                                    text = "Свой порог: ${formatAngle(state.customAlertAngle)}",
+                                    style = MaterialTheme.typography.bodyLarge,
+                                )
+                                Slider(
+                                    value = state.customAlertAngle,
+                                    onValueChange = viewModel::updateCustomAlertAngle,
+                                    valueRange = MIN_CUSTOM_THRESHOLD..MAX_CUSTOM_THRESHOLD,
+                                )
+                                Text(
+                                    text = "Ниже угол — корсет реагирует строже. Выше угол — мягче и спокойнее.",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                    }
+                }
                 if (!state.isMonitoringStarted) {
                     EmptyState(
                         title = "Мониторинг пока не активирован",
@@ -262,9 +337,12 @@ fun CoachScreen(
                         firstLabel = "Score",
                         firstValue = "${state.score}%",
                         secondLabel = "Угол",
-                        secondValue = state.currentAngle?.let { "${it.toInt()}°" } ?: "--",
+                        secondValue = state.currentAngle?.let { formatWholeAngle(it) } ?: "--",
                     )
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(
+                        modifier = Modifier.horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
                         CoachFilter.entries.forEach { filter ->
                             FilterChip(
                                 selected = state.selectedFilter == filter,
@@ -280,12 +358,13 @@ fun CoachScreen(
                         ) {
                             Text("График", style = MaterialTheme.typography.titleLarge)
                             Text(
-                                text = "Зеленая линия показывает момент реакции корсета примерно с ${state.thresholdAngle.toInt()}°.",
+                                text = "Зелёная линия показывает порог реакции корсета примерно с ${formatAngle(state.thresholdAngle)}.",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                             CoachChart(
                                 points = state.chartPoints,
+                                thresholdAngle = state.thresholdAngle,
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .height(240.dp),
@@ -314,6 +393,7 @@ fun CoachScreen(
 @Composable
 private fun CoachChart(
     points: List<PosturePoint>,
+    thresholdAngle: Float,
     modifier: Modifier = Modifier,
 ) {
     val lineColor = MaterialTheme.colorScheme.primary
@@ -344,9 +424,9 @@ private fun CoachChart(
             )
             .padding(16.dp),
     ) {
-        val maxAngle = maxOf(15f, points.maxOf { it.angle })
+        val maxAngle = maxOf(15f, thresholdAngle + 2f, points.maxOf { it.angle })
         val widthStep = size.width / (points.size - 1).coerceAtLeast(1)
-        val thresholdY = size.height - (MOTOR_THRESHOLD / maxAngle) * size.height
+        val thresholdY = size.height - (thresholdAngle / maxAngle) * size.height
 
         drawLine(
             color = Color(0xFF4CAF50),
@@ -373,3 +453,7 @@ private fun CoachChart(
         )
     }
 }
+
+private fun formatAngle(value: Float): String = String.format(Locale.getDefault(), "%.1f°", value)
+
+private fun formatWholeAngle(value: Float): String = "${value.roundToInt()}°"

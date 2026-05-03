@@ -14,15 +14,22 @@ class CorsetApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         container = AppContainer(this)
-        startBluetoothService()
+        if (container.bluetoothController.hasSavedDevice()) {
+            ensureBluetoothServiceRunning()
+        }
     }
 
-    private fun startBluetoothService() {
+    fun ensureBluetoothServiceRunning() {
+        if (!container.bluetoothController.hasSavedDevice()) return
         val serviceIntent = Intent(this, BluetoothLeService::class.java)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             startForegroundService(serviceIntent)
         } else {
             startService(serviceIntent)
         }
+    }
+
+    fun stopBluetoothService() {
+        stopService(Intent(this, BluetoothLeService::class.java))
     }
 }

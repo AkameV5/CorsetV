@@ -25,6 +25,13 @@ data class DeviceState(
     val isBatteryStale: Boolean = false,
 )
 
+data class ScannedDevice(
+    val address: String,
+    val name: String?,
+    val rssi: Int,
+    val isSaved: Boolean = false,
+)
+
 data class DailyStats(
     val dateKey: String,
     val goodFrames: Long,
@@ -42,6 +49,36 @@ data class ChatHistoryItem(
     val query: String,
     val answer: String,
 )
+
+enum class PostureAlertMode(
+    val title: String,
+    val description: String,
+    val angle: Float?,
+) {
+    Comfort(
+        title = "Комфортный",
+        description = "Мягкая реакция для повседневной носки",
+        angle = 8f,
+    ),
+    Balanced(
+        title = "Сбалансированный",
+        description = "Умеренный контроль без лишней резкости",
+        angle = 6f,
+    ),
+    Precise(
+        title = "Точный",
+        description = "Чувствительный режим с быстрым откликом",
+        angle = 5f,
+    ),
+    Custom(
+        title = "Свой угол",
+        description = "Порог задаётся вручную",
+        angle = null,
+    ),
+    ;
+
+    fun resolveAngle(customAngle: Float): Float = angle ?: customAngle
+}
 
 enum class CoachFilter(val title: String, val periodMs: Long?) {
     Live("Live", null),

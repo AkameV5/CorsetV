@@ -5,6 +5,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavType
+import androidx.navigation.navArgument
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
@@ -16,6 +17,7 @@ import com.akamev.corset.presentation.auth.RegisterScreen
 import com.akamev.corset.presentation.auth.SetupProfileScreen
 import com.akamev.corset.presentation.auth.SplashScreen
 import com.akamev.corset.presentation.auth.VerificationScreen
+import com.akamev.corset.presentation.device.AddDeviceViewModel
 import com.akamev.corset.presentation.chat.ChatScreen
 import com.akamev.corset.presentation.chat.ChatViewModel
 import com.akamev.corset.presentation.coach.CoachScreen
@@ -161,16 +163,32 @@ fun CorsetApp() {
             )
         }
         composable(CorsetDestination.AddDevice.route) {
+            val viewModel: AddDeviceViewModel =
+                androidx.lifecycle.viewmodel.compose.viewModel(factory = AddDeviceViewModel.factory(app))
             AddDeviceScreen(
+                viewModel = viewModel,
                 onBack = { navController.popBackStack() },
-                onStartConnecting = { navController.navigate(CorsetDestination.Connecting.route) },
+                onStartConnecting = { address ->
+                    navController.navigate(CorsetDestination.Connecting.createRoute(address))
+                },
             )
         }
-        composable(CorsetDestination.Connecting.route) {
+        composable(
+            route = CorsetDestination.Connecting.route,
+            arguments = listOf(
+                navArgument(CorsetDestination.Connecting.deviceAddressArg) {
+                    type = NavType.StringType
+                    nullable = true
+                    defaultValue = null
+                }
+            ),
+        ) { backStackEntry ->
+            val deviceAddress = backStackEntry.arguments?.getString(CorsetDestination.Connecting.deviceAddressArg)
             val viewModel: DeviceConnectionViewModel =
                 androidx.lifecycle.viewmodel.compose.viewModel(factory = DeviceConnectionViewModel.factory(app))
             ConnectingScreen(
                 viewModel = viewModel,
+                deviceAddress = deviceAddress,
                 onBack = { navController.popBackStack() },
                 onConnected = {
                     navController.navigate(CorsetDestination.Profile.route) {

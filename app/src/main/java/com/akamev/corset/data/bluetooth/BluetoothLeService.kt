@@ -1,39 +1,117 @@
 package com.akamev.corset.data.bluetooth
 
+import android.Manifest
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import com.akamev.corset.CorsetApplication
 import com.akamev.corset.MainActivity
 import com.akamev.corset.R
+import com.akamev.corset.data.wear.WearStateSnapshot
+import com.akamev.corset.data.wear.WearSyncController
+import com.akamev.corset.domain.model.DeviceState
+import com.akamev.corset.domain.model.Telemetry
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import java.util.Locale
+import kotlin.math.abs
 
 class BluetoothLeService : Service() {
 
+    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private lateinit var app: CorsetApplication
+
+    private var observersStarted = false
+    private var currentDeviceState = DeviceState()
+    private var lastTelemetryAt: Long? = null
+    private var badPostureStartedAt: Long? = null
+    private var lastPostureAlertAt: Long? = null
+    private var lastCompletedSessionEndAt: Long? = null
+    private var latestDeviation: Float? = null
+    private val recentAngles = ArrayDeque<Float>()
+    private lateinit var wearSyncController: WearSyncController
+
     override fun onCreate() {
         super.onCreate()
-        createNotificationChannel()
+        app = application as CorsetApplication
+        wearSyncController = WearSyncController(this)
+        createNotificationChannels()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (!app.container.bluetoothController.hasSavedDevice()) {
+            stopSelf()
+            return START_NOT_STICKY
+        }
+
         startForeground(NOTIFICATION_ID, buildNotification())
-        val app = application as CorsetApplication
+
+        if (!observersStarted) {
+            observeBluetoothState()
+            observeSessionClock()
+            observersStarted = true
+        }
+
         app.container.bluetoothController.connectToSavedDevice()
         return START_STICKY
     }
 
     override fun onDestroy() {
-        super.onDestroy()
-        val app = application as CorsetApplication
+        serviceScope.cancel()
         app.container.bluetoothController.destroy()
+        super.onDestroy()
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
+
+    private fun observeBluetoothState() {
+        serviceScope.launch {
+            app.container.bluetoothController.deviceState.collectLatest { state ->
+                currentDeviceState = state
+                syncWatchState()
+                refreshNotification()
+            }
+        }
+        serviceScope.launch {
+            app.container.bluetoothController.telemetry.collectLatest { telemetry ->
+                lastTelemetryAt = System.currentTimeMillis()
+                persistTelemetry(telemetry)
+                processSessionTelemetry(telemetry)
+                syncWatchState()
+                refreshNotification()
+            }
+        }
+    }
+
+    private fun observeSessionClock() {
+        serviceScope.launch {
+            while (isActive) {
+                checkSessionExpiry()
+                syncWatchState()
+                refreshNotification()
+                delay(SESSION_WATCH_INTERVAL_MS)
+            }
+        }
+    }
+
+    private fun refreshNotification() {
+        val manager = getSystemService(NotificationManager::class.java) ?: return
+        manager.notify(NOTIFICATION_ID, buildNotification())
+    }
 
     private fun buildNotification(): Notification {
         val pendingIntent = PendingIntent.getActivity(
@@ -43,29 +121,217 @@ class BluetoothLeService : Service() {
             PendingIntent.FLAG_IMMUTABLE,
         )
 
+        val isTelemetryFresh = lastTelemetryAt?.let { System.currentTimeMillis() - it <= TELEMETRY_FRESH_MS } == true
+        val sessionRemainingMs = app.container.appPreferences.getFocusSessionRemainingMs()
+        val sessionActive = sessionRemainingMs > 0L
+
+        val title = when {
+            sessionActive -> "Фокус-сессия идёт"
+            currentDeviceState.isConnected -> "Корсет подключён"
+            currentDeviceState.hasSavedDevice -> "Корсет не на связи"
+            else -> "Корсет не настроен"
+        }
+        val text = when {
+            sessionActive && currentDeviceState.isConnected ->
+                "Осталось ${formatRemaining(sessionRemainingMs)}. Следим за осанкой в фоне"
+
+            sessionActive ->
+                "Сессия активна, но корсет сейчас не на связи"
+
+            currentDeviceState.isConnected && isTelemetryFresh ->
+                "Получаем данные и следим за осанкой в фоне"
+
+            currentDeviceState.isConnected ->
+                "Соединение есть, ждём свежую телеметрию"
+
+            currentDeviceState.hasSavedDevice ->
+                "Пытаемся восстановить связь с сохранённым устройством"
+
+            else ->
+                "Добавь корсет в приложении, чтобы включить фоновый режим"
+        }
+
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_status_connected)
-            .setContentTitle("CorsetV работает")
-            .setContentText("Поддерживаем соединение с устройством")
+            .setSmallIcon(if (currentDeviceState.isConnected) R.drawable.ic_status_connected else R.drawable.ic_status_disconnected)
+            .setContentTitle(title)
+            .setContentText(text)
             .setContentIntent(pendingIntent)
+            .setOnlyAlertOnce(true)
+            .setSilent(true)
             .setOngoing(true)
             .build()
     }
 
-    private fun createNotificationChannel() {
+    private fun persistTelemetry(telemetry: Telemetry) {
+        val deviation = resolveDeviation(telemetry) ?: return
+        latestDeviation = deviation
+        rememberAngle(deviation)
+
+        serviceScope.launch(Dispatchers.IO) {
+            app.container.postureHistoryLocalDataSource.savePoint(
+                timestamp = System.currentTimeMillis(),
+                angle = deviation,
+            )
+        }
+    }
+
+    private fun processSessionTelemetry(telemetry: Telemetry) {
+        val now = System.currentTimeMillis()
+        if (!app.container.appPreferences.isFocusSessionActive(now)) {
+            badPostureStartedAt = null
+            return
+        }
+
+        val deviation = resolveDeviation(telemetry) ?: return
+        val threshold = app.container.appPreferences.getResolvedAlertAngle()
+        if (deviation <= threshold) {
+            badPostureStartedAt = null
+            return
+        }
+
+        val startedAt = badPostureStartedAt ?: now.also { badPostureStartedAt = it }
+        val duration = now - startedAt
+        val shouldNotify = duration >= BAD_POSTURE_ALERT_MS &&
+            (lastPostureAlertAt == null || now - (lastPostureAlertAt ?: 0L) >= POSTURE_ALERT_COOLDOWN_MS)
+
+        if (shouldNotify) {
+            notifyAlert(
+                notificationId = POSTURE_ALERT_NOTIFICATION_ID,
+                title = "Осанка просела",
+                text = "Ты сутулишься уже ${formatDuration(duration)}. Выпрямись и сделай короткую паузу.",
+            )
+            lastPostureAlertAt = now
+        }
+    }
+
+    private fun resolveDeviation(telemetry: Telemetry): Float? {
+        if (!app.container.appPreferences.isCalibrationDone()) return null
+
+        val rawAngle = telemetry.angle
+        val baseline = app.container.appPreferences.getBaselineAngle() ?: rawAngle.also {
+            app.container.appPreferences.saveBaselineAngle(it)
+        }
+        return abs(rawAngle - baseline)
+    }
+
+    private fun checkSessionExpiry() {
+        val endAt = app.container.appPreferences.getFocusSessionEndAt() ?: return
+        val now = System.currentTimeMillis()
+        if (endAt > now) return
+        if (lastCompletedSessionEndAt == endAt) return
+
+        lastCompletedSessionEndAt = endAt
+        app.container.appPreferences.clearFocusSession()
+        badPostureStartedAt = null
+        lastPostureAlertAt = null
+
+        notifyAlert(
+            notificationId = SESSION_ALERT_NOTIFICATION_ID,
+            title = "Сессия завершена",
+            text = "45 минут закончились. Загляни на экран «Сегодня» за итогом.",
+        )
+    }
+
+    private fun notifyAlert(
+        notificationId: Int,
+        title: String,
+        text: String,
+    ) {
+        if (!canPostAlertNotifications()) return
+
+        val manager = getSystemService(NotificationManager::class.java) ?: return
+        val pendingIntent = PendingIntent.getActivity(
+            this,
+            notificationId,
+            Intent(this, MainActivity::class.java),
+            PendingIntent.FLAG_IMMUTABLE,
+        )
+        val notification = NotificationCompat.Builder(this, ALERTS_CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_status_connected)
+            .setContentTitle(title)
+            .setContentText(text)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(text))
+            .setContentIntent(pendingIntent)
+            .setAutoCancel(true)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .build()
+
+        manager.notify(notificationId, notification)
+    }
+
+    private fun canPostAlertNotifications(): Boolean {
+        return Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+    }
+
+    private fun createNotificationChannels() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
 
-        val channel = NotificationChannel(
+        val serviceChannel = NotificationChannel(
             CHANNEL_ID,
             "Corset Background Service",
             NotificationManager.IMPORTANCE_LOW,
         )
+        val alertsChannel = NotificationChannel(
+            ALERTS_CHANNEL_ID,
+            "Corset Alerts",
+            NotificationManager.IMPORTANCE_DEFAULT,
+        )
         val manager = getSystemService(NotificationManager::class.java)
-        manager?.createNotificationChannel(channel)
+        manager?.createNotificationChannel(serviceChannel)
+        manager?.createNotificationChannel(alertsChannel)
+    }
+
+    private fun rememberAngle(angle: Float) {
+        recentAngles.addLast(angle)
+        while (recentAngles.size > MAX_GRAPH_POINTS) {
+            recentAngles.removeFirst()
+        }
+    }
+
+    private fun syncWatchState() {
+        wearSyncController.pushState(
+            WearStateSnapshot(
+                isConnected = currentDeviceState.isConnected,
+                batteryLevel = currentDeviceState.batteryLevel,
+                currentAngle = latestDeviation,
+                graphAngles = recentAngles.toList(),
+                sessionActive = app.container.appPreferences.isFocusSessionActive(),
+                sessionRemainingMs = app.container.appPreferences.getFocusSessionRemainingMs(),
+            ),
+        )
+    }
+
+    private fun formatRemaining(remainingMs: Long): String {
+        val totalMinutes = (remainingMs / 60_000L).coerceAtLeast(1L)
+        val hours = totalMinutes / 60L
+        val minutes = totalMinutes % 60L
+        return when {
+            hours > 0L && minutes > 0L -> "$hours ч $minutes мин"
+            hours > 0L -> "$hours ч"
+            else -> "$minutes мин"
+        }
+    }
+
+    private fun formatDuration(durationMs: Long): String {
+        val totalMinutes = (durationMs / 60_000L).coerceAtLeast(1L)
+        return if (totalMinutes >= 60L) {
+            String.format(Locale.getDefault(), "%d ч %d мин", totalMinutes / 60L, totalMinutes % 60L)
+        } else {
+            "$totalMinutes мин"
+        }
     }
 
     private companion object {
         const val CHANNEL_ID = "CorsetServiceChannel"
+        const val ALERTS_CHANNEL_ID = "CorsetAlertsChannel"
         const val NOTIFICATION_ID = 1
+        const val POSTURE_ALERT_NOTIFICATION_ID = 2
+        const val SESSION_ALERT_NOTIFICATION_ID = 3
+        const val TELEMETRY_FRESH_MS = 15_000L
+        const val SESSION_WATCH_INTERVAL_MS = 15_000L
+        const val BAD_POSTURE_ALERT_MS = 90_000L
+        const val POSTURE_ALERT_COOLDOWN_MS = 5 * 60 * 1000L
+        const val MAX_GRAPH_POINTS = 24
     }
 }

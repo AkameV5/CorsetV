@@ -2,6 +2,7 @@ package com.akamev.corset.data.local
 
 import android.content.Context
 import com.akamev.corset.domain.model.DailyStats
+import com.akamev.corset.domain.model.PostureAlertMode
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -47,6 +48,61 @@ class AppPreferences(context: Context) {
         appPrefs.edit().remove(KEY_LAST_BATTERY).apply()
     }
 
+    fun getAlertMode(): PostureAlertMode {
+        val savedName = appPrefs.getString(KEY_ALERT_MODE, null)
+        return PostureAlertMode.entries.firstOrNull { it.name == savedName } ?: PostureAlertMode.Precise
+    }
+
+    fun saveAlertMode(mode: PostureAlertMode) {
+        appPrefs.edit().putString(KEY_ALERT_MODE, mode.name).apply()
+    }
+
+    fun getCustomAlertAngle(): Float = appPrefs.getFloat(KEY_CUSTOM_ALERT_ANGLE, DEFAULT_CUSTOM_ALERT_ANGLE)
+
+    fun saveCustomAlertAngle(value: Float) {
+        appPrefs.edit().putFloat(KEY_CUSTOM_ALERT_ANGLE, value).apply()
+    }
+
+    fun getResolvedAlertAngle(): Float {
+        val mode = getAlertMode()
+        return mode.resolveAngle(getCustomAlertAngle())
+    }
+
+    fun startFocusSession(durationMs: Long) {
+        val now = System.currentTimeMillis()
+        appPrefs.edit()
+            .putLong(KEY_FOCUS_SESSION_START_AT, now)
+            .putLong(KEY_FOCUS_SESSION_END_AT, now + durationMs)
+            .apply()
+    }
+
+    fun getFocusSessionStartAt(): Long? {
+        val value = appPrefs.getLong(KEY_FOCUS_SESSION_START_AT, -1L)
+        return value.takeIf { it > 0L }
+    }
+
+    fun getFocusSessionEndAt(): Long? {
+        val value = appPrefs.getLong(KEY_FOCUS_SESSION_END_AT, -1L)
+        return value.takeIf { it > 0L }
+    }
+
+    fun isFocusSessionActive(now: Long = System.currentTimeMillis()): Boolean {
+        val endAt = getFocusSessionEndAt() ?: return false
+        return endAt > now
+    }
+
+    fun getFocusSessionRemainingMs(now: Long = System.currentTimeMillis()): Long {
+        val endAt = getFocusSessionEndAt() ?: return 0L
+        return (endAt - now).coerceAtLeast(0L)
+    }
+
+    fun clearFocusSession() {
+        appPrefs.edit()
+            .remove(KEY_FOCUS_SESSION_START_AT)
+            .remove(KEY_FOCUS_SESSION_END_AT)
+            .apply()
+    }
+
     fun loadDailyStats(): DailyStats {
         val today = todayKey()
         val savedDate = dailyStatsPrefs.getString(KEY_LAST_DATE, "") ?: ""
@@ -88,10 +144,15 @@ class AppPreferences(context: Context) {
         const val KEY_CALIBRATION_DONE = "calibration_done"
         const val KEY_BASELINE_ANGLE = "saved_baseline"
         const val KEY_LAST_BATTERY = "last_battery"
+        const val KEY_ALERT_MODE = "alert_mode"
+        const val KEY_CUSTOM_ALERT_ANGLE = "custom_alert_angle"
+        const val KEY_FOCUS_SESSION_START_AT = "focus_session_start_at"
+        const val KEY_FOCUS_SESSION_END_AT = "focus_session_end_at"
         const val KEY_LAST_DATE = "last_date"
         const val KEY_GOOD_FRAMES = "good_frames"
         const val KEY_TOTAL_FRAMES = "total_frames"
         const val KEY_SAVED_DEVICE_ADDRESS = "saved_device_address"
+        const val DEFAULT_CUSTOM_ALERT_ANGLE = 7f
 
         val DATE_FORMAT = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
     }

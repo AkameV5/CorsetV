@@ -82,10 +82,12 @@ class ProfileViewModel(
 
     fun deleteDevice() {
         app.container.bluetoothController.clearSavedDevice()
+        app.stopBluetoothService()
         _uiState.update { it.copy(statusMessage = "Устройство удалено.") }
     }
 
     fun logout() {
+        app.stopBluetoothService()
         app.container.authRepository.signOut()
     }
 
