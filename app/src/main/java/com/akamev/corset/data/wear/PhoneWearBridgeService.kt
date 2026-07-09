@@ -20,8 +20,13 @@ class PhoneWearBridgeService : WearableListenerService() {
             }
 
             WearSyncController.PATH_COMMAND_SESSION_START -> {
-                prefs.startFocusSession(45 * 60 * 1000L)
-                app.ensureBluetoothServiceRunning()
+                if (bluetoothController.deviceState.value.isConnected) {
+                    bluetoothController.writeCommand("SET")
+                    prefs.setCalibrationDone(true)
+                    prefs.clearBaselineAngle()
+                    prefs.startFocusSession(prefs.getPreferredFocusSessionDurationMs())
+                    app.ensureBluetoothServiceRunning()
+                }
             }
 
             WearSyncController.PATH_COMMAND_SESSION_STOP -> {

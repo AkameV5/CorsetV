@@ -261,7 +261,11 @@ fun AddDeviceScreen(
             result[permission] == true || hasPermission(context, permission)
         }
         if (allGranted) {
-            requestPermissionsAndStartScan(context, viewModel) { showLocationDialog = true }
+            if (BluetoothController.isBluetoothEnabled()) {
+                requestPermissionsAndStartScan(context, viewModel) { showLocationDialog = true }
+            } else {
+                bluetoothLauncher.launch(Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE))
+            }
         } else {
             Toast.makeText(context, "Нужны Bluetooth-разрешения для поиска устройства.", Toast.LENGTH_SHORT).show()
         }
@@ -323,12 +327,12 @@ fun AddDeviceScreen(
                         Button(
                             onClick = {
                                 when {
-                                    !BluetoothController.isBluetoothEnabled() -> {
-                                        bluetoothLauncher.launch(Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE))
-                                    }
-
                                     !hasBluetoothPermissions(context) -> {
                                         permissionsLauncher.launch(requiredBluetoothPermissions())
+                                    }
+
+                                    !BluetoothController.isBluetoothEnabled() -> {
+                                        bluetoothLauncher.launch(Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE))
                                     }
 
                                     requiresLocationForScan() && !BluetoothController.isLocationEnabled(context) -> {

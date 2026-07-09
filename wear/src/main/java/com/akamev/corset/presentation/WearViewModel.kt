@@ -21,12 +21,10 @@ import kotlin.math.roundToInt
 
 data class WearUiState(
     val isConnected: Boolean = false,
-    val batteryLabel: String = "--",
     val currentAngleLabel: String = "--",
+    val summaryLabel: String = "Phone offline",
     val graphAngles: List<Float> = emptyList(),
     val sessionActive: Boolean = false,
-    val sessionLabel: String = "45 мин",
-    val statusText: String = "Ждём данные с телефона...",
     val message: String? = null,
 )
 
@@ -51,30 +49,23 @@ class WearViewModel(
         viewModelScope.launch {
             val success = runCatching { sender.requestState() }.getOrDefault(false)
             if (!success) {
-                _uiState.update { it.copy(message = "Телефон не найден рядом") }
+                _uiState.update { it.copy(message = "Phone not reachable") }
             }
             refreshFromStore()
         }
     }
 
-    fun calibrate() {
-        sendCommand(
-            command = { sender.sendCalibrate() },
-            successMessage = "Калибровка отправлена",
-        )
-    }
-
     fun startSession() {
         sendCommand(
             command = { sender.startSession() },
-            successMessage = "Сессия запущена",
+            successMessage = "Session started",
         )
     }
 
     fun stopSession() {
         sendCommand(
             command = { sender.stopSession() },
-            successMessage = "Сессия остановлена",
+            successMessage = "Session stopped",
         )
     }
 
@@ -89,10 +80,10 @@ class WearViewModel(
         viewModelScope.launch {
             val success = runCatching { command() }.getOrDefault(false)
             _uiState.update {
-                it.copy(message = if (success) successMessage else "Не удалось связаться с телефоном")
+                it.copy(message = if (success) successMessage else "Command failed")
             }
             if (success) {
-                delay(400)
+                delay(300L)
                 requestState()
             }
         }
@@ -102,7 +93,7 @@ class WearViewModel(
         viewModelScope.launch {
             while (isActive) {
                 refreshFromStore()
-                delay(1_000L)
+                delay(WATCH_UI_REFRESH_MS)
             }
         }
     }
@@ -118,40 +109,31 @@ class WearViewModel(
 
         _uiState.value = WearUiState(
             isConnected = snapshot.isConnected,
-            batteryLabel = snapshot.batteryLevel?.let { "$it%" } ?: "--",
             currentAngleLabel = snapshot.currentAngle?.let(::formatAngle) ?: "--",
+            summaryLabel = buildSummary(snapshot, sessionActive, remainingMs),
             graphAngles = snapshot.graphAngles,
             sessionActive = sessionActive,
-            sessionLabel = if (sessionActive) formatRemaining(remainingMs) else "45 мин",
-            statusText = buildStatusText(snapshot, sessionActive, remainingMs),
             message = _uiState.value.message,
         )
     }
 
-    private fun buildStatusText(
+    private fun buildSummary(
         snapshot: WatchStateSnapshot,
         sessionActive: Boolean,
         remainingMs: Long,
     ): String {
         return when {
-            sessionActive && snapshot.isConnected ->
-                "Сессия активна, осталось ${formatRemaining(remainingMs)}"
-
-            sessionActive ->
-                "Сессия идёт, но телефон или корсет сейчас вне связи"
-
-            snapshot.isConnected ->
-                "Телефон и корсет на связи"
-
-            snapshot.updatedAt > 0L ->
-                "Показываем последние данные, ждём связь"
-
-            else ->
-                "Открой телефон рядом и нажми обновить"
+            sessionActive && snapshot.isConnected -> "Session ${formatRemaining(remainingMs)} left"
+            sessionActive -> "Session active, phone offline"
+            snapshot.isConnected -> "Phone connected"
+            snapshot.updatedAt > 0L -> "Showing last sync"
+            else -> "Open phone nearby"
         }
     }
 
     companion object {
+        private const val WATCH_UI_REFRESH_MS = 400L
+
         fun factory(context: Context): ViewModelProvider.Factory = viewModelFactory {
             initializer { WearViewModel(context) }
         }
@@ -163,9 +145,9 @@ class WearViewModel(
             val hours = totalMinutes / 60L
             val minutes = totalMinutes % 60L
             return when {
-                hours > 0L && minutes > 0L -> String.format(Locale.getDefault(), "%dч %dм", hours, minutes)
-                hours > 0L -> String.format(Locale.getDefault(), "%dч", hours)
-                else -> String.format(Locale.getDefault(), "%dм", minutes)
+                hours > 0L && minutes > 0L -> String.format(Locale.getDefault(), "%dh %dm", hours, minutes)
+                hours > 0L -> String.format(Locale.getDefault(), "%dh", hours)
+                else -> String.format(Locale.getDefault(), "%dm", minutes)
             }
         }
     }

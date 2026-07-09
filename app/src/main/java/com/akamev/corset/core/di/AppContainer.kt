@@ -17,7 +17,13 @@ class AppContainer(context: Context) {
     private val appContext = context.applicationContext
     private val firebaseAuth by lazy { FirebaseAuth.getInstance() }
     private val firestore by lazy { FirebaseFirestore.getInstance() }
-    private val httpClient by lazy { OkHttpClient() }
+    private val httpClient by lazy {
+        OkHttpClient.Builder()
+            .connectTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
+            .readTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
+            .writeTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
+            .build()
+    }
 
     val appPreferences by lazy { AppPreferences(appContext) }
     val bluetoothController by lazy { BluetoothController(appContext, appPreferences) }

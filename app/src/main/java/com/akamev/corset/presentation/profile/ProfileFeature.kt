@@ -141,7 +141,7 @@ fun ProfileScreen(
             ) {
                 HeroHeader(
                     title = state.fullName.ifBlank { "Профиль" },
-                    subtitle = "Управление устройством, калибровкой и состоянием подключения.",
+                    subtitle = "Управление устройством, калибровкой и подключением.",
                 )
                 TwoColumnStats(
                     firstLabel = "Статус",
@@ -176,7 +176,7 @@ fun ProfileScreen(
                             Text("Текущее устройство", style = MaterialTheme.typography.titleLarge)
                             Text(
                                 text = if (state.deviceState.isConnected) {
-                                    "Корсет подключен и готов к передаче данных."
+                                    "Corset подключен и готов к передаче данных."
                                 } else {
                                     "Адрес сохранен. Приложение будет пытаться восстановить соединение автоматически."
                                 },
