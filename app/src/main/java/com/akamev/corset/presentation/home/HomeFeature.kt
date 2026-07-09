@@ -19,6 +19,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -61,7 +62,9 @@ private const val DEFAULT_SAMPLE_MS = 100L
 private const val MAX_INTERVAL_MS = 1_000L
 private const val TODAY_REFRESH_MS = 15_000L
 private const val SESSION_TICK_MS = 1_000L
-private const val FOCUS_SESSION_DURATION_MS = 45 * 60 * 1000L
+private const val MIN_FOCUS_SESSION_MINUTES = 5
+private const val MAX_FOCUS_SESSION_MINUTES = 180
+private const val FOCUS_SESSION_STEP_MINUTES = 5
 
 data class HomeUiState(
     val firstName: String = "",
@@ -77,8 +80,9 @@ data class HomeUiState(
     val summaryText: String = "Подключи корсет и начни мониторинг, чтобы собрать первую сводку дня.",
     val statusMessage: String? = null,
     val isFocusSessionActive: Boolean = false,
+    val selectedFocusSessionMinutes: Int = 45,
     val focusSessionRemainingLabel: String = "45 мин",
-    val focusSessionStatus: String = "Запусти рабочую сессию, и приложение начнёт следить за осанкой в фоне.",
+    val focusSessionStatus: String = "Выбери время и запусти сессию. На старте корсет примет текущую позу как базовую.",
 )
 
 private data class TodayMetrics(
@@ -124,6 +128,7 @@ class HomeViewModel(
                     formattedDate = formattedDate,
                     dailyTip = tips[formattedDate.hashCode().absoluteValue % tips.size],
                     streak = profile?.currentStreak ?: 0,
+                    selectedFocusSessionMinutes = app.container.appPreferences.getPreferredFocusSessionDurationMinutes(),
                 )
             }
             refreshTodayMetrics()
@@ -143,16 +148,26 @@ class HomeViewModel(
         showStatusMessage("Калибровка отправлена. Подержи ровную позу пару секунд.")
     }
 
+    fun updateFocusSessionDuration(minutes: Int) {
+        val snappedMinutes = snapFocusSessionMinutes(minutes)
+        app.container.appPreferences.savePreferredFocusSessionDurationMinutes(snappedMinutes)
+        refreshFocusSessionState()
+    }
+
     fun startFocusSession() {
-        if (!_uiState.value.deviceState.hasSavedDevice) {
-            showStatusMessage("Сначала добавь корсет, чтобы запускать рабочие сессии.")
+        if (!_uiState.value.deviceState.isConnected) {
+            showStatusMessage("Чтобы сессия реально запустила корсет, сначала подключи его к телефону.")
             return
         }
 
-        app.container.appPreferences.startFocusSession(FOCUS_SESSION_DURATION_MS)
+        val durationMinutes = app.container.appPreferences.getPreferredFocusSessionDurationMinutes()
+        app.container.bluetoothController.writeCommand("SET")
+        app.container.appPreferences.setCalibrationDone(true)
+        app.container.appPreferences.clearBaselineAngle()
+        app.container.appPreferences.startFocusSession(durationMinutes * 60_000L)
         app.ensureBluetoothServiceRunning()
         refreshFocusSessionState()
-        showStatusMessage("Фокус-сессия на 45 минут запущена.")
+        showStatusMessage("Сессия запущена. Корсет принял текущую позу как базовую.")
     }
 
     fun stopFocusSession() {
@@ -204,15 +219,19 @@ class HomeViewModel(
     private fun refreshFocusSessionState() {
         val now = System.currentTimeMillis()
         val isActive = app.container.appPreferences.isFocusSessionActive(now)
+        val preferredMinutes = app.container.appPreferences.getPreferredFocusSessionDurationMinutes()
+        val preferredLabel = formatMinutes(preferredMinutes)
+
         if (!isActive) {
             _uiState.update {
                 it.copy(
                     isFocusSessionActive = false,
-                    focusSessionRemainingLabel = "45 мин",
+                    selectedFocusSessionMinutes = preferredMinutes,
+                    focusSessionRemainingLabel = preferredLabel,
                     focusSessionStatus = if (it.deviceState.isConnected) {
-                        "Корсет на связи. Можно запустить 45-минутную рабочую сессию."
+                        "Корсет на связи. Выбери время, и на старте он примет текущую позу как базовую."
                     } else {
-                        "Запусти рабочую сессию, и приложение будет напоминать о спине, когда корсет снова выйдет на связь."
+                        "Сначала подключи корсет. Теперь сессия сразу калибрует его под текущую позу."
                     },
                 )
             }
@@ -223,11 +242,12 @@ class HomeViewModel(
         _uiState.update {
             it.copy(
                 isFocusSessionActive = true,
+                selectedFocusSessionMinutes = preferredMinutes,
                 focusSessionRemainingLabel = formatRemaining(remainingMs),
                 focusSessionStatus = if (it.deviceState.isConnected) {
-                    "Сессия идёт. Если осанка просядет надолго, приложение напомнит в фоне."
+                    "Сессия идёт. Корсет уже ориентируется на текущую позу."
                 } else {
-                    "Сессия идёт, но корсет сейчас не на связи. Как только соединение вернётся, напоминания продолжатся."
+                    "Сессия идёт, но связь с корсетом пропала. Подключение вернётся автоматически."
                 },
             )
         }
@@ -457,7 +477,7 @@ fun HomeScreen(
                             text = if (state.isFocusSessionActive) {
                                 "Осталось ${state.focusSessionRemainingLabel}"
                             } else {
-                                "Старт на 45 минут"
+                                "Старт на ${formatMinutes(state.selectedFocusSessionMinutes)}"
                             },
                             style = MaterialTheme.typography.bodyLarge,
                         )
@@ -474,6 +494,17 @@ fun HomeScreen(
                                 Text("Остановить сессию")
                             }
                         } else {
+                            Slider(
+                                value = state.selectedFocusSessionMinutes.toFloat(),
+                                onValueChange = { value -> viewModel.updateFocusSessionDuration(value.roundToInt()) },
+                                valueRange = MIN_FOCUS_SESSION_MINUTES.toFloat()..MAX_FOCUS_SESSION_MINUTES.toFloat(),
+                                steps = ((MAX_FOCUS_SESSION_MINUTES - MIN_FOCUS_SESSION_MINUTES) / FOCUS_SESSION_STEP_MINUTES) - 1,
+                            )
+                            Text(
+                                text = "От 5 минут до 3 часов",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
                             Button(
                                 onClick = {
                                     if (hasNotificationPermission(context)) {
@@ -484,7 +515,7 @@ fun HomeScreen(
                                 },
                                 modifier = Modifier.fillMaxWidth(),
                             ) {
-                                Text("Начать рабочую сессию на 45 минут")
+                                Text("Начать сессию на ${formatMinutes(state.selectedFocusSessionMinutes)}")
                             }
                         }
                     }
@@ -603,6 +634,23 @@ private fun formatRemaining(remainingMs: Long): String {
         hours > 0L -> "$hours ч"
         else -> "$minutes мин"
     }
+}
+
+private fun formatMinutes(minutes: Int): String {
+    val hours = minutes / 60
+    val restMinutes = minutes % 60
+    return when {
+        hours > 0 && restMinutes > 0 -> "$hours ч $restMinutes мин"
+        hours > 0 -> "$hours ч"
+        else -> "$minutes мин"
+    }
+}
+
+private fun snapFocusSessionMinutes(minutes: Int): Int {
+    val clamped = minutes.coerceIn(MIN_FOCUS_SESSION_MINUTES, MAX_FOCUS_SESSION_MINUTES)
+    val relative = clamped - MIN_FOCUS_SESSION_MINUTES
+    val snapped = ((relative + FOCUS_SESSION_STEP_MINUTES / 2) / FOCUS_SESSION_STEP_MINUTES) * FOCUS_SESSION_STEP_MINUTES
+    return (MIN_FOCUS_SESSION_MINUTES + snapped).coerceIn(MIN_FOCUS_SESSION_MINUTES, MAX_FOCUS_SESSION_MINUTES)
 }
 
 private fun formatAngle(value: Float): String = "${value.roundToInt()}°"

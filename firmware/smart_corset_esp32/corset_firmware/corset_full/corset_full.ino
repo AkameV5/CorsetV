@@ -167,7 +167,6 @@ void loop() {
   lastMotorOn = motorOn;
 
   if (deviceConnected) {
-    // Формат: "angle;motorState;battery"
     String data = String(angle, 2) + ";" + motorOn + ";" + batteryLevel;
     pDataCharacteristic->setValue(data.c_str());
     pDataCharacteristic->notify();

@@ -86,7 +86,7 @@ class BluetoothController(
         _scanResults.value = emptyList()
         _isScanning.value = true
 
-        emitSavedDevicePreview(adapter)
+        emitBondedDevicePreviews(adapter)
 
         scanCallback = object : ScanCallback() {
             override fun onScanResult(callbackType: Int, result: ScanResult) {
@@ -291,16 +291,43 @@ class BluetoothController(
             )
     }
 
-    private fun emitSavedDevicePreview(adapter: BluetoothAdapter) {
-        val savedAddress = appPreferences.getSavedDeviceAddress() ?: return
-        val savedDevice = runCatching { adapter.getRemoteDevice(savedAddress) }.getOrNull() ?: return
-        discoveredDevices[savedAddress] = ScannedDevice(
-            address = savedAddress,
-            name = savedDevice.safeName(),
-            rssi = Int.MIN_VALUE,
-            isSaved = true,
-        )
-        _scanResults.value = discoveredDevices.values.toList()
+    private fun emitBondedDevicePreviews(adapter: BluetoothAdapter) {
+        val savedAddress = appPreferences.getSavedDeviceAddress()
+        val bondedDevices = runCatching { adapter.bondedDevices.toList() }.getOrDefault(emptyList())
+
+        bondedDevices
+            .filter { device ->
+                val name = device.safeName()?.trim()
+                device.address == savedAddress || (name != null && TARGET_DEVICE_NAMES.contains(name))
+            }
+            .forEach { device ->
+                discoveredDevices[device.address] = ScannedDevice(
+                    address = device.address,
+                    name = device.safeName(),
+                    rssi = Int.MIN_VALUE,
+                    isSaved = device.address == savedAddress,
+                )
+            }
+
+        if (savedAddress != null && discoveredDevices[savedAddress] == null) {
+            val savedDevice = runCatching { adapter.getRemoteDevice(savedAddress) }.getOrNull()
+            if (savedDevice != null) {
+                discoveredDevices[savedAddress] = ScannedDevice(
+                    address = savedAddress,
+                    name = savedDevice.safeName(),
+                    rssi = Int.MIN_VALUE,
+                    isSaved = true,
+                )
+            }
+        }
+
+        _scanResults.value = discoveredDevices.values
+            .sortedWith(
+                compareByDescending<ScannedDevice> { it.isSaved }
+                    .thenBy { it.rssi == Int.MIN_VALUE }
+                    .thenByDescending { it.rssi }
+                    .thenBy { it.name ?: it.address },
+            )
     }
 
     private fun scheduleServiceDiscovery(gatt: BluetoothGatt) {

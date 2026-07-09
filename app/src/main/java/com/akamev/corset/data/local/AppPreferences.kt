@@ -68,6 +68,25 @@ class AppPreferences(context: Context) {
         return mode.resolveAngle(getCustomAlertAngle())
     }
 
+
+    fun getPreferredFocusSessionDurationMinutes(): Int {
+        val stored = appPrefs.getInt(KEY_PREFERRED_FOCUS_SESSION_MINUTES, DEFAULT_FOCUS_SESSION_MINUTES)
+        return stored.coerceIn(MIN_FOCUS_SESSION_MINUTES, MAX_FOCUS_SESSION_MINUTES)
+    }
+
+    fun getPreferredFocusSessionDurationMs(): Long {
+        return getPreferredFocusSessionDurationMinutes() * 60_000L
+    }
+
+    fun savePreferredFocusSessionDurationMinutes(minutes: Int) {
+        appPrefs.edit()
+            .putInt(
+                KEY_PREFERRED_FOCUS_SESSION_MINUTES,
+                minutes.coerceIn(MIN_FOCUS_SESSION_MINUTES, MAX_FOCUS_SESSION_MINUTES),
+            )
+            .apply()
+    }
+
     fun startFocusSession(durationMs: Long) {
         val now = System.currentTimeMillis()
         appPrefs.edit()
@@ -146,6 +165,7 @@ class AppPreferences(context: Context) {
         const val KEY_LAST_BATTERY = "last_battery"
         const val KEY_ALERT_MODE = "alert_mode"
         const val KEY_CUSTOM_ALERT_ANGLE = "custom_alert_angle"
+        const val KEY_PREFERRED_FOCUS_SESSION_MINUTES = "preferred_focus_session_minutes"
         const val KEY_FOCUS_SESSION_START_AT = "focus_session_start_at"
         const val KEY_FOCUS_SESSION_END_AT = "focus_session_end_at"
         const val KEY_LAST_DATE = "last_date"
@@ -153,6 +173,9 @@ class AppPreferences(context: Context) {
         const val KEY_TOTAL_FRAMES = "total_frames"
         const val KEY_SAVED_DEVICE_ADDRESS = "saved_device_address"
         const val DEFAULT_CUSTOM_ALERT_ANGLE = 7f
+        const val MIN_FOCUS_SESSION_MINUTES = 5
+        const val MAX_FOCUS_SESSION_MINUTES = 180
+        const val DEFAULT_FOCUS_SESSION_MINUTES = 45
 
         val DATE_FORMAT = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
     }

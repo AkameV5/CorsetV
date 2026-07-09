@@ -232,8 +232,16 @@ class CoachViewModel(
                 String.format(Locale.US, "%.1f", averageAngle)
             } градусов. Порог реакции: ${String.format(Locale.US, "%.1f", currentAlertThreshold())} градусов. Оценка: $score%. Дай один короткий совет на русском языке."
             val advice = runCatching {
-                app.container.aiRemoteDataSource.requestText(prompt)
-            }.getOrElse {
+                app.container.aiRemoteDataSource.requestChat(
+                    systemInstruction = "Ты краткий AI-коуч по осанке. Дай один короткий совет по данным, без диагноза и без воды.",
+                    conversation = listOf(
+                        com.akamev.corset.domain.model.AiChatTurn(
+                            role = com.akamev.corset.domain.model.AiChatRole.User,
+                            text = prompt,
+                        ),
+                    ),
+                )
+            }.getOrElse { _: Throwable ->
                 fallbackAdvice(averageAngle)
             }
             _uiState.update { it.copy(aiAdvice = advice, isAiLoading = false) }

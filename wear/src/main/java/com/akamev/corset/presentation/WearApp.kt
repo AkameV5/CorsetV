@@ -44,7 +44,7 @@ fun WearApp() {
 
     LaunchedEffect(state.message) {
         if (state.message != null) {
-            kotlinx.coroutines.delay(2200)
+            kotlinx.coroutines.delay(1800)
             viewModel.consumeMessage()
         }
     }
@@ -61,31 +61,13 @@ fun WearApp() {
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 item {
-                    WearHeroCard(
-                        title = state.currentAngleLabel,
-                        subtitle = if (state.isConnected) "Текущий угол" else "Связь оффлайн",
+                    HeroCard(
+                        angleLabel = state.currentAngleLabel,
+                        summary = state.summaryLabel,
                     )
                 }
                 item {
-                    WearInfoCard(
-                        title = "Статус",
-                        body = state.statusText,
-                    )
-                }
-                item {
-                    WearInfoCard(
-                        title = "Батарея",
-                        body = state.batteryLabel,
-                    )
-                }
-                item {
-                    WearInfoCard(
-                        title = if (state.sessionActive) "Сессия идёт" else "Сессия 45 мин",
-                        body = state.sessionLabel,
-                    )
-                }
-                item {
-                    WearGraphCard(state.graphAngles)
+                    GraphCard(points = state.graphAngles)
                 }
                 item {
                     Chip(
@@ -98,33 +80,16 @@ fun WearApp() {
                         },
                         label = {
                             Text(
-                                text = if (state.sessionActive) "Стоп сессии" else "Старт сессии",
+                                text = if (state.sessionActive) "Stop session" else "Start session",
                                 textAlign = TextAlign.Center,
                             )
                         },
                         modifier = Modifier.fillMaxWidth(),
                     )
                 }
-                item {
-                    Chip(
-                        onClick = viewModel::calibrate,
-                        label = { Text("Калибровка", textAlign = TextAlign.Center) },
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                }
-                item {
-                    Chip(
-                        onClick = viewModel::requestState,
-                        label = { Text("Обновить", textAlign = TextAlign.Center) },
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                }
                 if (state.message != null) {
                     item {
-                        WearInfoCard(
-                            title = "Сообщение",
-                            body = state.message.orEmpty(),
-                        )
+                        MessageCard(state.message.orEmpty())
                     }
                 }
             }
@@ -133,9 +98,9 @@ fun WearApp() {
 }
 
 @Composable
-private fun WearHeroCard(
-    title: String,
-    subtitle: String,
+private fun HeroCard(
+    angleLabel: String,
+    summary: String,
 ) {
     Card(
         onClick = {},
@@ -148,11 +113,11 @@ private fun WearHeroCard(
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             Text(
-                text = title,
+                text = angleLabel,
                 style = MaterialTheme.typography.display2,
             )
             Text(
-                text = subtitle,
+                text = summary,
                 style = MaterialTheme.typography.body2,
                 color = MaterialTheme.colors.onSurfaceVariant,
             )
@@ -161,32 +126,7 @@ private fun WearHeroCard(
 }
 
 @Composable
-private fun WearInfoCard(
-    title: String,
-    body: String,
-) {
-    Card(
-        onClick = {},
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 8.dp),
-    ) {
-        Column(
-            modifier = Modifier.padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
-            Text(text = title, style = MaterialTheme.typography.title3)
-            Text(
-                text = body,
-                style = MaterialTheme.typography.body2,
-                color = MaterialTheme.colors.onSurfaceVariant,
-            )
-        }
-    }
-}
-
-@Composable
-private fun WearGraphCard(
+private fun GraphCard(
     points: List<Float>,
 ) {
     Card(
@@ -199,19 +139,22 @@ private fun WearGraphCard(
             modifier = Modifier.padding(14.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Text(text = "Последние значения", style = MaterialTheme.typography.title3)
+            Text(
+                text = "Posture graph",
+                style = MaterialTheme.typography.title3,
+            )
             if (points.isEmpty()) {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(90.dp)
+                        .height(80.dp)
                         .background(
                             color = MaterialTheme.colors.surface,
                             shape = RoundedCornerShape(12.dp),
                         ),
                 ) {
                     Text(
-                        text = "График появится после первых данных",
+                        text = "Waiting for live data",
                         modifier = Modifier.padding(12.dp),
                         style = MaterialTheme.typography.body2,
                     )
@@ -220,7 +163,7 @@ private fun WearGraphCard(
                 Canvas(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(90.dp)
+                        .height(80.dp)
                         .background(
                             color = MaterialTheme.colors.surface,
                             shape = RoundedCornerShape(12.dp),
@@ -251,5 +194,21 @@ private fun WearGraphCard(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun MessageCard(message: String) {
+    Card(
+        onClick = {},
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 8.dp),
+    ) {
+        Text(
+            text = message,
+            modifier = Modifier.padding(14.dp),
+            style = MaterialTheme.typography.body2,
+        )
     }
 }

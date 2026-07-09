@@ -50,6 +50,23 @@ data class ChatHistoryItem(
     val answer: String,
 )
 
+data class ChatSessionSummary(
+    val id: String,
+    val title: String,
+    val updatedAt: Long,
+    val preview: String,
+)
+
+data class AiChatTurn(
+    val role: AiChatRole,
+    val text: String,
+)
+
+enum class AiChatRole {
+    User,
+    Model,
+}
+
 enum class PostureAlertMode(
     val title: String,
     val description: String,

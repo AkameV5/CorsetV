@@ -58,6 +58,12 @@ class BluetoothLeService : Service() {
             return START_NOT_STICKY
         }
 
+        currentDeviceState = app.container.bluetoothController.deviceState.value
+        if (!shouldKeepServiceAlive()) {
+            stopSelf()
+            return START_NOT_STICKY
+        }
+
         startForeground(NOTIFICATION_ID, buildNotification())
 
         if (!observersStarted) {
@@ -82,6 +88,11 @@ class BluetoothLeService : Service() {
         serviceScope.launch {
             app.container.bluetoothController.deviceState.collectLatest { state ->
                 currentDeviceState = state
+                if (!shouldKeepServiceAlive()) {
+                    stopForeground(STOP_FOREGROUND_REMOVE)
+                    stopSelf()
+                    return@collectLatest
+                }
                 syncWatchState()
                 refreshNotification()
             }
@@ -101,6 +112,11 @@ class BluetoothLeService : Service() {
         serviceScope.launch {
             while (isActive) {
                 checkSessionExpiry()
+                if (!shouldKeepServiceAlive()) {
+                    stopForeground(STOP_FOREGROUND_REMOVE)
+                    stopSelf()
+                    return@launch
+                }
                 syncWatchState()
                 refreshNotification()
                 delay(SESSION_WATCH_INTERVAL_MS)
@@ -109,6 +125,7 @@ class BluetoothLeService : Service() {
     }
 
     private fun refreshNotification() {
+        if (!shouldKeepServiceAlive()) return
         val manager = getSystemService(NotificationManager::class.java) ?: return
         manager.notify(NOTIFICATION_ID, buildNotification())
     }
@@ -300,6 +317,10 @@ class BluetoothLeService : Service() {
                 sessionRemainingMs = app.container.appPreferences.getFocusSessionRemainingMs(),
             ),
         )
+    }
+
+    private fun shouldKeepServiceAlive(): Boolean {
+        return currentDeviceState.isConnected || app.container.appPreferences.isFocusSessionActive()
     }
 
     private fun formatRemaining(remainingMs: Long): String {
