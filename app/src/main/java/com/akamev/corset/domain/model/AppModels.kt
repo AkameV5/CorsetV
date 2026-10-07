@@ -1,10 +1,22 @@
 package com.akamev.corset.domain.model
 
+import androidx.annotation.StringRes
+import com.akamev.corset.R
+
 data class UserProfile(
     val firstName: String,
     val lastName: String,
     val email: String,
     val currentStreak: Long = 0,
+    val isGuest: Boolean = false,
+)
+
+data class DailySummary(
+    val dateKey: String,
+    val score: Int,
+    val goodPostureMinutes: Long,
+    val triggerCount: Int,
+    val averageDeviation: Float,
 )
 
 data class Telemetry(
@@ -50,29 +62,46 @@ data class ChatHistoryItem(
     val answer: String,
 )
 
-enum class PostureAlertMode(
+data class ChatSessionSummary(
+    val id: String,
     val title: String,
-    val description: String,
+    val updatedAt: Long,
+    val preview: String,
+)
+
+data class AiChatTurn(
+    val role: AiChatRole,
+    val text: String,
+)
+
+enum class AiChatRole {
+    User,
+    Model,
+}
+
+enum class PostureAlertMode(
+    @StringRes val titleRes: Int,
+    @StringRes val descriptionRes: Int,
     val angle: Float?,
 ) {
     Comfort(
-        title = "Комфортный",
-        description = "Мягкая реакция для повседневной носки",
+        titleRes = R.string.coach_mode_comfort_title,
+        descriptionRes = R.string.coach_mode_comfort_desc,
         angle = 8f,
     ),
     Balanced(
-        title = "Сбалансированный",
-        description = "Умеренный контроль без лишней резкости",
+        titleRes = R.string.coach_mode_balanced_title,
+        descriptionRes = R.string.coach_mode_balanced_desc,
         angle = 6f,
     ),
     Precise(
-        title = "Точный",
-        description = "Чувствительный режим с быстрым откликом",
+        titleRes = R.string.coach_mode_precise_title,
+        descriptionRes = R.string.coach_mode_precise_desc,
         angle = 5f,
     ),
     Custom(
-        title = "Свой угол",
-        description = "Порог задаётся вручную",
+        titleRes = R.string.coach_mode_custom_title,
+        descriptionRes = R.string.coach_mode_custom_desc,
         angle = null,
     ),
     ;
@@ -80,10 +109,10 @@ enum class PostureAlertMode(
     fun resolveAngle(customAngle: Float): Float = angle ?: customAngle
 }
 
-enum class CoachFilter(val title: String, val periodMs: Long?) {
-    Live("Live", null),
-    TenMinutes("10m", 10 * 60 * 1000L),
-    OneHour("1h", 60 * 60 * 1000L),
-    TenHours("10h", 10 * 60 * 60 * 1000L),
-    OneDay("24h", 24 * 60 * 60 * 1000L),
+enum class CoachFilter(@StringRes val titleRes: Int, val periodMs: Long?) {
+    Live(R.string.coach_filter_live, null),
+    TenMinutes(R.string.coach_filter_10m, 10 * 60 * 1000L),
+    OneHour(R.string.coach_filter_1h, 60 * 60 * 1000L),
+    TenHours(R.string.coach_filter_10h, 10 * 60 * 60 * 1000L),
+    OneDay(R.string.coach_filter_24h, 24 * 60 * 60 * 1000L),
 }

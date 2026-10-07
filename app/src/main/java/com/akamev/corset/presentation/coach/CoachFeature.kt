@@ -21,6 +21,7 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
@@ -55,6 +56,10 @@ import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
+import com.akamev.corset.domain.model.DeviceState
+import com.akamev.corset.presentation.common.InteractiveCalibrationDialog
+import com.akamev.corset.presentation.common.SpineVisualizer
+
 private const val DEFAULT_THRESHOLD = 5f
 private const val MIN_CUSTOM_THRESHOLD = 3f
 private const val MAX_CUSTOM_THRESHOLD = 12f
@@ -66,10 +71,12 @@ data class CoachUiState(
     val thresholdAngle: Float = DEFAULT_THRESHOLD,
     val alertMode: PostureAlertMode = PostureAlertMode.Precise,
     val customAlertAngle: Float = 7f,
-    val aiAdvice: String = "Нажмите «Откалибровать» в профиле, чтобы начать отслеживание.",
+    val aiAdvice: String = "",
     val isAiLoading: Boolean = false,
     val selectedFilter: CoachFilter = CoachFilter.Live,
     val chartPoints: List<PosturePoint> = emptyList(),
+    val deviceState: DeviceState = DeviceState(),
+    val isCalibrationDialogOpen: Boolean = false,
 )
 
 class CoachViewModel(
@@ -89,7 +96,31 @@ class CoachViewModel(
         loadHistory()
         refreshAlertSettings(pushToDevice = false)
         observeTelemetry()
+        observeDeviceState()
         refreshMonitoringState()
+    }
+
+    fun openCalibrationDialog() {
+        _uiState.update { it.copy(isCalibrationDialogOpen = true) }
+    }
+
+    fun closeCalibrationDialog() {
+        _uiState.update { it.copy(isCalibrationDialogOpen = false) }
+    }
+
+    fun onCalibrationConfirmed() {
+        app.container.bluetoothController.writeCommand("SET")
+        app.container.appPreferences.setCalibrationDone(true)
+        app.container.appPreferences.clearBaselineAngle()
+        refreshMonitoringState()
+    }
+
+    private fun observeDeviceState() {
+        viewModelScope.launch {
+            app.container.bluetoothController.deviceState.collectLatest { deviceState ->
+                _uiState.update { it.copy(deviceState = deviceState) }
+            }
+        }
     }
 
     fun selectFilter(filter: CoachFilter) {
@@ -277,21 +308,24 @@ fun CoachScreen(
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 HeroHeader(
-                    title = "Мониторинг",
-                    subtitle = "Текущий угол отклонения, история за выбранный период и краткие рекомендации по осанке.",
+                    title = androidx.compose.ui.res.stringResource(com.akamev.corset.R.string.coach_title),
+                    subtitle = androidx.compose.ui.res.stringResource(com.akamev.corset.R.string.coach_subtitle),
                 )
                 GlassCard {
                     Column(
                         modifier = Modifier.padding(20.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
-                        Text("Режим напоминаний", style = MaterialTheme.typography.titleLarge)
                         Text(
-                            text = "${state.alertMode.title} • ${formatAngle(state.thresholdAngle)}",
+                            text = androidx.compose.ui.res.stringResource(com.akamev.corset.R.string.coach_alert_mode_title),
+                            style = MaterialTheme.typography.titleLarge,
+                        )
+                        Text(
+                            text = "${androidx.compose.ui.res.stringResource(state.alertMode.titleRes)} • ${formatAngle(state.thresholdAngle)}",
                             style = MaterialTheme.typography.bodyLarge,
                         )
                         Text(
-                            text = state.alertMode.description,
+                            text = androidx.compose.ui.res.stringResource(state.alertMode.descriptionRes),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -303,14 +337,14 @@ fun CoachScreen(
                                 FilterChip(
                                     selected = state.alertMode == mode,
                                     onClick = { viewModel.selectAlertMode(mode) },
-                                    label = { Text(mode.title) },
+                                    label = { Text(androidx.compose.ui.res.stringResource(mode.titleRes)) },
                                 )
                             }
                         }
                         if (state.alertMode == PostureAlertMode.Custom) {
                             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                 Text(
-                                    text = "Свой порог: ${formatAngle(state.customAlertAngle)}",
+                                    text = androidx.compose.ui.res.stringResource(com.akamev.corset.R.string.coach_custom_slider_label, formatAngle(state.customAlertAngle)),
                                     style = MaterialTheme.typography.bodyLarge,
                                 )
                                 Slider(
@@ -319,7 +353,7 @@ fun CoachScreen(
                                     valueRange = MIN_CUSTOM_THRESHOLD..MAX_CUSTOM_THRESHOLD,
                                 )
                                 Text(
-                                    text = "Ниже угол — корсет реагирует строже. Выше угол — мягче и спокойнее.",
+                                    text = androidx.compose.ui.res.stringResource(com.akamev.corset.R.string.coach_custom_slider_hint),
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
@@ -329,14 +363,52 @@ fun CoachScreen(
                 }
                 if (!state.isMonitoringStarted) {
                     EmptyState(
-                        title = "Мониторинг пока не активирован",
-                        subtitle = "Открой профиль и нажми «Откалибровать», чтобы зафиксировать исходную позу.",
+                        title = androidx.compose.ui.res.stringResource(com.akamev.corset.R.string.coach_not_started_title),
+                        subtitle = androidx.compose.ui.res.stringResource(com.akamev.corset.R.string.coach_not_started_subtitle),
                     )
+                    androidx.compose.material3.Button(
+                        onClick = viewModel::openCalibrationDialog,
+                        enabled = state.deviceState.isConnected,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(16.dp),
+                    ) {
+                        Text(androidx.compose.ui.res.stringResource(com.akamev.corset.R.string.coach_calibrate_btn))
+                    }
                 } else {
+                    GlassCard {
+                        Column(
+                            modifier = Modifier.padding(20.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp),
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Text(
+                                    text = androidx.compose.ui.res.stringResource(com.akamev.corset.R.string.spine_visualizer_title),
+                                    style = MaterialTheme.typography.titleLarge,
+                                )
+                                androidx.compose.material3.OutlinedButton(
+                                    onClick = viewModel::openCalibrationDialog,
+                                    enabled = state.deviceState.isConnected,
+                                    shape = RoundedCornerShape(14.dp),
+                                ) {
+                                    Text(androidx.compose.ui.res.stringResource(com.akamev.corset.R.string.coach_calibrate_btn))
+                                }
+                            }
+                            SpineVisualizer(
+                                deviationAngle = state.currentAngle ?: 0f,
+                                thresholdAngle = state.thresholdAngle,
+                                height = 190.dp,
+                            )
+                        }
+                    }
+
                     TwoColumnStats(
-                        firstLabel = "Score",
+                        firstLabel = androidx.compose.ui.res.stringResource(com.akamev.corset.R.string.coach_score_label),
                         firstValue = "${state.score}%",
-                        secondLabel = "Угол",
+                        secondLabel = androidx.compose.ui.res.stringResource(com.akamev.corset.R.string.coach_angle_label),
                         secondValue = state.currentAngle?.let { formatWholeAngle(it) } ?: "--",
                     )
                     Row(
@@ -347,7 +419,7 @@ fun CoachScreen(
                             FilterChip(
                                 selected = state.selectedFilter == filter,
                                 onClick = { viewModel.selectFilter(filter) },
-                                label = { Text(filter.title) },
+                                label = { Text(androidx.compose.ui.res.stringResource(filter.titleRes)) },
                             )
                         }
                     }
@@ -356,9 +428,9 @@ fun CoachScreen(
                             modifier = Modifier.padding(20.dp),
                             verticalArrangement = Arrangement.spacedBy(12.dp),
                         ) {
-                            Text("График", style = MaterialTheme.typography.titleLarge)
+                            Text(androidx.compose.ui.res.stringResource(com.akamev.corset.R.string.coach_chart_title), style = MaterialTheme.typography.titleLarge)
                             Text(
-                                text = "Зелёная линия показывает порог реакции корсета примерно с ${formatAngle(state.thresholdAngle)}.",
+                                text = androidx.compose.ui.res.stringResource(com.akamev.corset.R.string.coach_chart_desc, formatAngle(state.thresholdAngle)),
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -376,9 +448,9 @@ fun CoachScreen(
                             modifier = Modifier.padding(20.dp),
                             verticalArrangement = Arrangement.spacedBy(12.dp),
                         ) {
-                            Text("Рекомендация", style = MaterialTheme.typography.titleLarge)
+                            Text(androidx.compose.ui.res.stringResource(com.akamev.corset.R.string.coach_recommendation_title), style = MaterialTheme.typography.titleLarge)
                             if (state.isAiLoading) {
-                                Text("Собираем рекомендацию...", style = MaterialTheme.typography.bodyLarge)
+                                Text(androidx.compose.ui.res.stringResource(com.akamev.corset.R.string.coach_recommendation_loading), style = MaterialTheme.typography.bodyLarge)
                             } else {
                                 Text(state.aiAdvice, style = MaterialTheme.typography.bodyLarge)
                             }
@@ -387,6 +459,15 @@ fun CoachScreen(
                 }
             }
         }
+    }
+
+    if (state.isCalibrationDialogOpen) {
+        InteractiveCalibrationDialog(
+            currentAngle = state.currentAngle,
+            isConnected = state.deviceState.isConnected,
+            onDismissRequest = viewModel::closeCalibrationDialog,
+            onCalibrateConfirmed = viewModel::onCalibrationConfirmed,
+        )
     }
 }
 

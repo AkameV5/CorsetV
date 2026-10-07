@@ -135,6 +135,25 @@
     <string name="coach_calibration_sent">Calibration applied. Hold an upright posture for a couple seconds.</string>
     <string name="coach_device_disconnected_hint">Connect corset first, then calibrate it directly from here.</string>
 
+    <!-- Interactive Calibration & Live Spine -->
+    <string name="calibration_dialog_title">Interactive Calibration</string>
+    <string name="calibration_step1_title">Align your posture</string>
+    <string name="calibration_step1_desc">Sit comfortably upright, relax your shoulders down, and align your head naturally.</string>
+    <string name="calibration_step2_title">Hold still…</string>
+    <string name="calibration_step2_desc">Keep steady while the corset locks in your baseline angle.</string>
+    <string name="calibration_step3_title">Calibration Complete!</string>
+    <string name="calibration_step3_desc">Baseline angle saved. Your smart corset is now tracking this upright posture.</string>
+    <string name="calibration_start_btn">Start calibration</string>
+    <string name="calibration_done_btn">Done</string>
+    <string name="calibration_cancel_btn">Cancel</string>
+    <string name="calibration_current_posture">Live posture: %1$s</string>
+    <string name="calibration_stability_good">Steady position</string>
+    <string name="calibration_stability_moving">Slight movement detected, stay still…</string>
+    <string name="spine_posture_optimal">Optimal posture</string>
+    <string name="spine_posture_warning">Slight slouch</string>
+    <string name="spine_posture_alert">Strong slouch</string>
+    <string name="spine_visualizer_title">Spine posture</string>
+
     <!-- AI Chat Screen -->
     <string name="chat_title">AI Coach</string>
     <string name="chat_subtitle">Consult about spine biomechanics, stretches, or corset calibration.</string>

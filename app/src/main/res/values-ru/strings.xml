@@ -135,6 +135,25 @@
     <string name="coach_calibration_sent">Калибровка отправлена. Подержи ровную позу пару секунд.</string>
     <string name="coach_device_disconnected_hint">Сначала подключи корсет, потом можно будет откалибровать его прямо отсюда.</string>
 
+    <!-- Interactive Calibration & Live Spine -->
+    <string name="calibration_dialog_title">Интерактивная калибровка</string>
+    <string name="calibration_step1_title">Выровняйте осанку</string>
+    <string name="calibration_step1_desc">Сядьте ровно и комфортно, опустите плечи и потянитесь макушкой вверх.</string>
+    <string name="calibration_step2_title">Замрите на пару секунд…</string>
+    <string name="calibration_step2_desc">Держите позу неподвижно, пока корсет фиксирует базовый угол.</string>
+    <string name="calibration_step3_title">Калибровка завершена!</string>
+    <string name="calibration_step3_desc">Эталонное положение сохранено. Теперь умный корсет ориентируется на эту позу.</string>
+    <string name="calibration_start_btn">Начать фиксацию</string>
+    <string name="calibration_done_btn">Готово</string>
+    <string name="calibration_cancel_btn">Отмена</string>
+    <string name="calibration_current_posture">Текущая поза: %1$s</string>
+    <string name="calibration_stability_good">Положение стабильно</string>
+    <string name="calibration_stability_moving">Есть движение, замрите на месте…</string>
+    <string name="spine_posture_optimal">Идеальная осанка</string>
+    <string name="spine_posture_warning">Лёгкая сутулость</string>
+    <string name="spine_posture_alert">Выраженная сутулость</string>
+    <string name="spine_visualizer_title">Положение позвоночника</string>
+
     <!-- AI Chat Screen -->
     <string name="chat_title">AI-тренер</string>
     <string name="chat_subtitle">Спроси об осанке, разминке или настройке корсета.</string>
