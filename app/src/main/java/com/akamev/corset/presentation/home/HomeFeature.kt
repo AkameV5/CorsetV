@@ -4,12 +4,9 @@ import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
-import com.akamev.corset.R
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -17,19 +14,13 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.ui.draw.clip
 import androidx.compose.material3.Button
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedIconButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
@@ -70,10 +61,7 @@ private const val DEFAULT_SAMPLE_MS = 100L
 private const val MAX_INTERVAL_MS = 1_000L
 private const val TODAY_REFRESH_MS = 15_000L
 private const val SESSION_TICK_MS = 1_000L
-private const val MIN_FOCUS_SESSION_MINUTES = 5
-private const val MAX_FOCUS_SESSION_MINUTES = 180
-private const val FOCUS_SESSION_STEP_MINUTES = 5
-private const val CLOUD_SYNC_THROTTLE_MS = 5 * 60 * 1000L
+private const val FOCUS_SESSION_DURATION_MS = 45 * 60 * 1000L
 
 data class HomeUiState(
     val firstName: String = "",
@@ -81,27 +69,25 @@ data class HomeUiState(
     val dailyTip: String = "",
     val streak: Long = 0,
     val deviceState: DeviceState = DeviceState(),
-    val goodPostureDurationMs: Long = 0L,
-    val triggerCount: Int = 0,
-    val averageDeviation: Float? = null,
+    val goodPostureLabel: String = "Пока нет",
+    val triggerCountLabel: String = "0",
+    val averageDeviationLabel: String = "--",
     val bestPeriodLabel: String = "--",
     val worstPeriodLabel: String = "--",
-    val summaryTextRes: Int = R.string.home_no_device_summary,
-    val dynamicSummaryText: String? = null,
-    val statusMessageRes: Int? = null,
+    val summaryText: String = "Подключи корсет и начни мониторинг, чтобы собрать первую сводку дня.",
+    val statusMessage: String? = null,
     val isFocusSessionActive: Boolean = false,
-    val selectedFocusSessionMinutes: Int = 45,
-    val focusSessionRemainingMs: Long = 45 * 60_000L,
+    val focusSessionRemainingLabel: String = "45 мин",
+    val focusSessionStatus: String = "Запусти рабочую сессию, и приложение начнёт следить за осанкой в фоне.",
 )
 
 private data class TodayMetrics(
-    val goodPostureDurationMs: Long,
-    val triggerCount: Int,
-    val averageDeviation: Float?,
+    val goodPostureLabel: String,
+    val triggerCountLabel: String,
+    val averageDeviationLabel: String,
     val bestPeriodLabel: String,
     val worstPeriodLabel: String,
-    val summaryTextRes: Int = 0,
-    val dynamicSummaryText: String? = null,
+    val summaryText: String,
 )
 
 class HomeViewModel(
@@ -121,27 +107,16 @@ class HomeViewModel(
     fun refresh() {
         viewModelScope.launch {
             val profile = app.container.userRepository.getCurrentUserProfile()
-            val locale = Locale.getDefault()
+            val locale = Locale.forLanguageTag("ru")
             val today = SimpleDateFormat("EEEE, d MMMM", locale).format(Date())
             val formattedDate = today.replaceFirstChar { if (it.isLowerCase()) it.titlecase(locale) else it.toString() }
-            val isRu = locale.language == "ru"
-            val tips = if (isRu) {
-                listOf(
-                    "Держи экран на уровне глаз, а не коленей.",
-                    "Раз в 30 минут мягко расправляй плечи и выдыхай глубже.",
-                    "Пара минут ходьбы быстро снимает лишнюю нагрузку со спины.",
-                    "Не зажимай шею, когда долго работаешь за столом.",
-                    "Короткая разминка грудного отдела возвращает тонус быстрее, чем кажется.",
-                )
-            } else {
-                listOf(
-                    "Keep your screen at eye level rather than looking down.",
-                    "Gently roll your shoulders back and take a deep breath every 30 minutes.",
-                    "A quick 2-minute walk instantly relieves spinal pressure.",
-                    "Avoid tucking your neck when working long hours at a desk.",
-                    "A quick thoracic stretch restores alertness and relieves tension.",
-                )
-            }
+            val tips = listOf(
+                "Держи экран на уровне глаз, а не коленей.",
+                "Раз в 30 минут мягко расправляй плечи и выдыхай глубже.",
+                "Пара минут ходьбы быстро снимает лишнюю нагрузку со спины.",
+                "Не зажимай шею, когда долго работаешь за столом.",
+                "Короткая разминка грудного отдела возвращает тонус быстрее, чем кажется.",
+            )
 
             _uiState.update {
                 it.copy(
@@ -149,7 +124,6 @@ class HomeViewModel(
                     formattedDate = formattedDate,
                     dailyTip = tips[formattedDate.hashCode().absoluteValue % tips.size],
                     streak = profile?.currentStreak ?: 0,
-                    selectedFocusSessionMinutes = app.container.appPreferences.getPreferredFocusSessionDurationMinutes(),
                 )
             }
             refreshTodayMetrics()
@@ -159,54 +133,44 @@ class HomeViewModel(
 
     fun calibrate() {
         if (!_uiState.value.deviceState.isConnected) {
-            showStatusMessage(R.string.coach_device_disconnected_hint)
+            showStatusMessage("Сначала подключи корсет, потом можно будет откалибровать его прямо отсюда.")
             return
         }
 
         app.container.bluetoothController.writeCommand("SET")
         app.container.appPreferences.setCalibrationDone(true)
         app.container.appPreferences.clearBaselineAngle()
-        showStatusMessage(R.string.coach_calibration_sent)
-    }
-
-    fun updateFocusSessionDuration(minutes: Int) {
-        val snappedMinutes = snapFocusSessionMinutes(minutes)
-        app.container.appPreferences.savePreferredFocusSessionDurationMinutes(snappedMinutes)
-        refreshFocusSessionState()
+        showStatusMessage("Калибровка отправлена. Подержи ровную позу пару секунд.")
     }
 
     fun startFocusSession() {
-        if (!_uiState.value.deviceState.isConnected) {
-            showStatusMessage(R.string.home_session_needs_device_msg)
+        if (!_uiState.value.deviceState.hasSavedDevice) {
+            showStatusMessage("Сначала добавь корсет, чтобы запускать рабочие сессии.")
             return
         }
 
-        val durationMinutes = app.container.appPreferences.getPreferredFocusSessionDurationMinutes()
-        app.container.bluetoothController.writeCommand("SET")
-        app.container.appPreferences.setCalibrationDone(true)
-        app.container.appPreferences.clearBaselineAngle()
-        app.container.appPreferences.startFocusSession(durationMinutes * 60_000L)
+        app.container.appPreferences.startFocusSession(FOCUS_SESSION_DURATION_MS)
         app.ensureBluetoothServiceRunning()
         refreshFocusSessionState()
-        showStatusMessage(R.string.home_session_started_msg)
+        showStatusMessage("Фокус-сессия на 45 минут запущена.")
     }
 
     fun stopFocusSession() {
         app.container.appPreferences.clearFocusSession()
         refreshFocusSessionState()
-        showStatusMessage(R.string.home_session_stopped_msg)
+        showStatusMessage("Фокус-сессия остановлена.")
     }
 
     fun onNotificationPermissionDenied() {
-        showStatusMessage(R.string.home_permission_denied_msg)
+        showStatusMessage("Без разрешения на уведомления сессия пойдёт, но напоминания могут не прийти.")
     }
 
     fun consumeStatusMessage() {
-        _uiState.update { it.copy(statusMessageRes = null) }
+        _uiState.update { it.copy(statusMessage = null) }
     }
 
-    private fun showStatusMessage(messageRes: Int) {
-        _uiState.update { it.copy(statusMessageRes = messageRes) }
+    private fun showStatusMessage(message: String) {
+        _uiState.update { it.copy(statusMessage = message) }
     }
 
     private fun observeDeviceState() {
@@ -240,14 +204,16 @@ class HomeViewModel(
     private fun refreshFocusSessionState() {
         val now = System.currentTimeMillis()
         val isActive = app.container.appPreferences.isFocusSessionActive(now)
-        val preferredMinutes = app.container.appPreferences.getPreferredFocusSessionDurationMinutes()
-
         if (!isActive) {
             _uiState.update {
                 it.copy(
                     isFocusSessionActive = false,
-                    selectedFocusSessionMinutes = preferredMinutes,
-                    focusSessionRemainingMs = preferredMinutes * 60_000L,
+                    focusSessionRemainingLabel = "45 мин",
+                    focusSessionStatus = if (it.deviceState.isConnected) {
+                        "Корсет на связи. Можно запустить 45-минутную рабочую сессию."
+                    } else {
+                        "Запусти рабочую сессию, и приложение будет напоминать о спине, когда корсет снова выйдет на связь."
+                    },
                 )
             }
             return
@@ -257,21 +223,20 @@ class HomeViewModel(
         _uiState.update {
             it.copy(
                 isFocusSessionActive = true,
-                selectedFocusSessionMinutes = preferredMinutes,
-                focusSessionRemainingMs = remainingMs,
+                focusSessionRemainingLabel = formatRemaining(remainingMs),
+                focusSessionStatus = if (it.deviceState.isConnected) {
+                    "Сессия идёт. Если осанка просядет надолго, приложение напомнит в фоне."
+                } else {
+                    "Сессия идёт, но корсет сейчас не на связи. Как только соединение вернётся, напоминания продолжатся."
+                },
             )
         }
     }
 
-    private var lastCloudSyncTimestamp: Long = 0L
-
     private fun refreshTodayMetrics() {
         viewModelScope.launch {
             val threshold = app.container.appPreferences.getResolvedAlertAngle()
-            val history = app.container.postureRepository.loadHistory()
-            val todayStart = startOfToday()
-            val todayPoints = history.filter { it.timestamp >= todayStart }
-
+            val history = app.container.postureHistoryLocalDataSource.loadHistory()
             val metrics = buildTodayMetrics(
                 history = history,
                 threshold = threshold,
@@ -279,32 +244,12 @@ class HomeViewModel(
             )
             _uiState.update {
                 it.copy(
-                    goodPostureDurationMs = metrics.goodPostureDurationMs,
-                    triggerCount = metrics.triggerCount,
-                    averageDeviation = metrics.averageDeviation,
+                    goodPostureLabel = metrics.goodPostureLabel,
+                    triggerCountLabel = metrics.triggerCountLabel,
+                    averageDeviationLabel = metrics.averageDeviationLabel,
                     bestPeriodLabel = metrics.bestPeriodLabel,
                     worstPeriodLabel = metrics.worstPeriodLabel,
-                    summaryTextRes = metrics.summaryTextRes,
-                    dynamicSummaryText = metrics.dynamicSummaryText,
-                )
-            }
-
-            val now = System.currentTimeMillis()
-            if (todayPoints.isNotEmpty() && (now - lastCloudSyncTimestamp >= CLOUD_SYNC_THROTTLE_MS)) {
-                lastCloudSyncTimestamp = now
-                val goodPostureMs = computeGoodPostureDuration(todayPoints, threshold)
-                val goodMinutes = (goodPostureMs / 60_000L).coerceAtLeast(0L)
-                val triggerCount = computeTriggerCount(todayPoints, threshold)
-                val avgDev = todayPoints.map { it.angle }.average().toFloat()
-                val goodCount = todayPoints.count { it.angle <= threshold }
-                val score = (goodCount.toDouble() / todayPoints.size * 100).roundToInt().coerceIn(0, 100)
-
-                app.container.userRepository.syncTodaySummary(
-                    dateKey = app.container.appPreferences.todayKey(),
-                    score = score,
-                    goodPostureMinutes = goodMinutes,
-                    triggerCount = triggerCount,
-                    averageDeviation = avgDev,
+                    summaryText = metrics.summaryText,
                 )
             }
         }
@@ -321,18 +266,18 @@ class HomeViewModel(
             .sortedBy { it.timestamp }
 
         if (todayPoints.isEmpty()) {
-            val summaryRes = when {
-                !deviceState.hasSavedDevice -> R.string.home_no_device_summary
-                deviceState.isConnected -> R.string.home_fresh_data_summary
-                else -> R.string.home_offline_summary
+            val summary = when {
+                !deviceState.hasSavedDevice -> "Корсет ещё не добавлен. Подключи устройство и запусти калибровку, чтобы видеть сводку дня."
+                deviceState.isConnected -> "Данные за сегодня только начинают собираться. Оставь мониторинг включённым, и здесь появится картина дня."
+                else -> "За сегодня пока нет телеметрии. Когда корсет снова выйдет на связь, экран начнёт собирать дневную сводку."
             }
             return TodayMetrics(
-                goodPostureDurationMs = 0L,
-                triggerCount = 0,
-                averageDeviation = null,
+                goodPostureLabel = "Пока нет",
+                triggerCountLabel = "0",
+                averageDeviationLabel = "--",
                 bestPeriodLabel = "--",
                 worstPeriodLabel = "--",
-                summaryTextRes = summaryRes,
+                summaryText = summary,
             )
         }
 
@@ -342,28 +287,19 @@ class HomeViewModel(
         val hourlyBuckets = todayPoints.groupBy { bucketStart(it.timestamp) }
         val bestPeriod = hourlyBuckets.maxByOrNull { (_, points) -> goodRatio(points, threshold) }?.key
         val worstPeriod = hourlyBuckets.minByOrNull { (_, points) -> goodRatio(points, threshold) }?.key
-
-        val isRu = Locale.getDefault().language == "ru"
-        val prefix = if (deviceState.isConnected) {
-            if (isRu) "Корсет сейчас на связи." else "Corset is online."
+        val currentStatus = if (deviceState.isConnected) {
+            "Корсет сейчас на связи."
         } else {
-            if (isRu) "Сейчас устройство не на связи, но сводка за день сохранена." else "Device is offline, but daily summary is saved."
-        }
-        val formattedGoodTime = formatDurationString(app, goodPostureMs)
-        val periodText = worstPeriod?.let(::formatPeriodLabel) ?: if (isRu) "без выраженного провала" else "no specific weak interval"
-        val body = if (isRu) {
-            "Хорошая осанка держалась ${formattedGoodTime.lowercase(Locale.getDefault())}, а чаще всего просадка встречалась в интервале $periodText."
-        } else {
-            "Good posture held for $formattedGoodTime, with most slouching occurring during $periodText."
+            "Сейчас устройство не на связи, но сводка за день сохранена."
         }
 
         return TodayMetrics(
-            goodPostureDurationMs = goodPostureMs,
-            triggerCount = triggerCount,
-            averageDeviation = averageDeviation,
+            goodPostureLabel = formatDuration(goodPostureMs),
+            triggerCountLabel = triggerCount.toString(),
+            averageDeviationLabel = formatAngle(averageDeviation),
             bestPeriodLabel = bestPeriod?.let(::formatPeriodLabel) ?: "--",
             worstPeriodLabel = worstPeriod?.let(::formatPeriodLabel) ?: "--",
-            dynamicSummaryText = "$prefix $body",
+            summaryText = "$currentStatus Хорошая осанка держалась ${formatDuration(goodPostureMs).lowercase(Locale.getDefault())}, а чаще всего просадка встречалась в интервале ${worstPeriod?.let(::formatPeriodLabel) ?: "без выраженного провала"}.",
         )
     }
 
@@ -449,17 +385,11 @@ fun HomeScreen(
     val context = LocalContext.current
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val deviceStatusLabel = when {
-        state.deviceState.isConnected -> androidx.compose.ui.res.stringResource(R.string.home_status_connected)
-        state.deviceState.hasSavedDevice -> androidx.compose.ui.res.stringResource(R.string.home_status_offline)
-        else -> androidx.compose.ui.res.stringResource(R.string.home_status_not_added)
+        state.deviceState.isConnected -> "На связи"
+        state.deviceState.hasSavedDevice -> "Оффлайн"
+        else -> "Не добавлен"
     }
     val batteryLabel = state.deviceState.batteryLevel?.let { "$it%" } ?: "--"
-
-    val goodPostureLabel = if (state.goodPostureDurationMs > 0L) {
-        formatDurationLocalized(context, state.goodPostureDurationMs)
-    } else {
-        androidx.compose.ui.res.stringResource(R.string.home_not_yet)
-    }
 
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission(),
@@ -472,8 +402,8 @@ fun HomeScreen(
         }
     }
 
-    LaunchedEffect(state.statusMessageRes) {
-        if (state.statusMessageRes != null) {
+    LaunchedEffect(state.statusMessage) {
+        if (state.statusMessage != null) {
             delay(2500)
             viewModel.consumeStatusMessage()
         }
@@ -492,29 +422,25 @@ fun HomeScreen(
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 HeroHeader(
-                    title = if (state.firstName.isBlank() || state.firstName == "Пользователь" || state.firstName == "User" || state.firstName == "Гость" || state.firstName == "Guest") {
-                        androidx.compose.ui.res.stringResource(R.string.home_title_today)
-                    } else {
-                        androidx.compose.ui.res.stringResource(R.string.home_title_today_with_name, state.firstName)
-                    },
-                    subtitle = state.formattedDate.ifBlank { androidx.compose.ui.res.stringResource(R.string.home_default_subtitle) },
+                    title = if (state.firstName.isBlank()) "Сегодня" else "Сегодня, ${state.firstName}",
+                    subtitle = state.formattedDate.ifBlank { "Сводка дня появится здесь, как только корсет начнёт собирать телеметрию." },
                 )
                 TwoColumnStats(
-                    firstLabel = androidx.compose.ui.res.stringResource(R.string.home_stat_good_posture),
-                    firstValue = goodPostureLabel,
-                    secondLabel = androidx.compose.ui.res.stringResource(R.string.home_stat_triggers),
-                    secondValue = state.triggerCount.toString(),
+                    firstLabel = "Хорошая осанка",
+                    firstValue = state.goodPostureLabel,
+                    secondLabel = "Срабатывания",
+                    secondValue = state.triggerCountLabel,
                 )
                 TwoColumnStats(
-                    firstLabel = androidx.compose.ui.res.stringResource(R.string.home_stat_avg_deviation),
-                    firstValue = state.averageDeviation?.let { formatAngle(it) } ?: "--",
-                    secondLabel = androidx.compose.ui.res.stringResource(R.string.home_stat_battery),
+                    firstLabel = "Среднее отклонение",
+                    firstValue = state.averageDeviationLabel,
+                    secondLabel = "Батарея",
                     secondValue = batteryLabel,
                 )
-                if (state.statusMessageRes != null) {
+                if (state.statusMessage != null) {
                     GlassCard {
                         Text(
-                            text = androidx.compose.ui.res.stringResource(state.statusMessageRes!!),
+                            text = state.statusMessage.orEmpty(),
                             modifier = Modifier.padding(20.dp),
                             style = MaterialTheme.typography.bodyLarge,
                             color = MaterialTheme.colorScheme.secondary,
@@ -524,107 +450,30 @@ fun HomeScreen(
                 GlassCard {
                     Column(
                         modifier = Modifier.padding(24.dp),
-                        verticalArrangement = Arrangement.spacedBy(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Text(
-                                text = androidx.compose.ui.res.stringResource(R.string.home_session_section),
-                                style = MaterialTheme.typography.titleLarge,
-                                fontWeight = FontWeight.SemiBold,
-                            )
-                            Box(
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .background(
-                                        if (state.isFocusSessionActive)
-                                            MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
-                                        else
-                                            MaterialTheme.colorScheme.surfaceVariant
-                                    )
-                                    .padding(horizontal = 10.dp, vertical = 4.dp),
-                            ) {
-                                Text(
-                                    text = if (state.isFocusSessionActive)
-                                        androidx.compose.ui.res.stringResource(R.string.home_session_active_badge)
-                                    else
-                                        androidx.compose.ui.res.stringResource(R.string.home_session_ready_badge),
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = if (state.isFocusSessionActive)
-                                        MaterialTheme.colorScheme.primary
-                                    else
-                                        MaterialTheme.colorScheme.onSurfaceVariant,
-                                    fontWeight = FontWeight.Medium,
-                                )
-                            }
-                        }
-
+                        Text("Фокус-сессия", style = MaterialTheme.typography.titleLarge)
+                        Text(
+                            text = if (state.isFocusSessionActive) {
+                                "Осталось ${state.focusSessionRemainingLabel}"
+                            } else {
+                                "Старт на 45 минут"
+                            },
+                            style = MaterialTheme.typography.bodyLarge,
+                        )
+                        Text(
+                            text = state.focusSessionStatus,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                         if (state.isFocusSessionActive) {
-                            Column(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.spacedBy(8.dp),
-                            ) {
-                                Text(
-                                    text = formatRemainingLocalized(context, state.focusSessionRemainingMs),
-                                    style = MaterialTheme.typography.displayLarge,
-                                    color = MaterialTheme.colorScheme.primary,
-                                    fontWeight = FontWeight.Bold,
-                                )
-                                Text(
-                                    text = androidx.compose.ui.res.stringResource(R.string.home_session_running_desc),
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
                             OutlinedButton(
                                 onClick = viewModel::stopFocusSession,
                                 modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(16.dp),
                             ) {
-                                Text(androidx.compose.ui.res.stringResource(R.string.home_session_btn_stop))
+                                Text("Остановить сессию")
                             }
                         } else {
-                            Text(
-                                text = androidx.compose.ui.res.stringResource(R.string.home_session_picker_hint),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            ) {
-                                listOf(15, 30, 45, 60).forEach { minutes ->
-                                    val isSelected = state.selectedFocusSessionMinutes == minutes
-                                    Box(
-                                        modifier = Modifier
-                                            .weight(1f)
-                                            .clip(RoundedCornerShape(16.dp))
-                                            .background(
-                                                if (isSelected)
-                                                    MaterialTheme.colorScheme.primary
-                                                else
-                                                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f)
-                                            )
-                                            .clickable { viewModel.updateFocusSessionDuration(minutes) }
-                                            .padding(vertical = 12.dp),
-                                        contentAlignment = Alignment.Center,
-                                    ) {
-                                        Text(
-                                            text = context.getString(R.string.time_minutes, minutes),
-                                            style = MaterialTheme.typography.labelLarge,
-                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                            color = if (isSelected)
-                                                MaterialTheme.colorScheme.onPrimary
-                                            else
-                                                MaterialTheme.colorScheme.onSurface,
-                                        )
-                                    }
-                                }
-                            }
                             Button(
                                 onClick = {
                                     if (hasNotificationPermission(context)) {
@@ -634,9 +483,8 @@ fun HomeScreen(
                                     }
                                 },
                                 modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(16.dp),
                             ) {
-                                Text(androidx.compose.ui.res.stringResource(R.string.home_session_btn_start, state.selectedFocusSessionMinutes))
+                                Text("Начать рабочую сессию на 45 минут")
                             }
                         }
                     }
@@ -646,19 +494,16 @@ fun HomeScreen(
                         modifier = Modifier.padding(24.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
-                        Text(androidx.compose.ui.res.stringResource(R.string.home_daily_picture_title), style = MaterialTheme.typography.titleLarge)
-                        Text(
-                            text = state.dynamicSummaryText ?: androidx.compose.ui.res.stringResource(state.summaryTextRes),
-                            style = MaterialTheme.typography.bodyLarge,
-                        )
+                        Text("Картина дня", style = MaterialTheme.typography.titleLarge)
+                        Text(state.summaryText, style = MaterialTheme.typography.bodyLarge)
                         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                             HomeMiniCard(
-                                title = androidx.compose.ui.res.stringResource(R.string.home_stat_best_period),
+                                title = "Лучший период",
                                 value = state.bestPeriodLabel,
                                 modifier = Modifier.weight(1f),
                             )
                             HomeMiniCard(
-                                title = androidx.compose.ui.res.stringResource(R.string.home_stat_worst_period),
+                                title = "Слабый период",
                                 value = state.worstPeriodLabel,
                                 modifier = Modifier.weight(1f),
                             )
@@ -667,13 +512,13 @@ fun HomeScreen(
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     HomeActionCard(
-                        title = androidx.compose.ui.res.stringResource(R.string.home_action_monitoring_title),
-                        subtitle = androidx.compose.ui.res.stringResource(R.string.home_action_monitoring_subtitle),
+                        title = "Мониторинг",
+                        subtitle = "Живой угол, режимы напоминаний и график осанки",
                         modifier = Modifier.weight(1f),
                     ) { onNavigate(CorsetDestination.Coach.route) }
                     HomeActionCard(
-                        title = androidx.compose.ui.res.stringResource(R.string.home_action_device_title),
-                        subtitle = context.getString(R.string.home_action_device_subtitle, deviceStatusLabel),
+                        title = "Устройство",
+                        subtitle = "Статус: $deviceStatusLabel",
                         modifier = Modifier.weight(1f),
                     ) { onNavigate(CorsetDestination.Profile.route) }
                 }
@@ -682,19 +527,19 @@ fun HomeScreen(
                         modifier = Modifier.padding(24.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
-                        Text(androidx.compose.ui.res.stringResource(R.string.home_tip_title), style = MaterialTheme.typography.titleLarge)
+                        Text("Совет дня", style = MaterialTheme.typography.titleLarge)
                         Text(state.dailyTip, style = MaterialTheme.typography.bodyLarge)
                         Button(
                             onClick = viewModel::calibrate,
                             modifier = Modifier.fillMaxWidth(),
                         ) {
-                            Text(androidx.compose.ui.res.stringResource(R.string.home_calibrate_btn))
+                            Text("Откалибровать")
                         }
                         OutlinedButton(
                             onClick = { onNavigate(CorsetDestination.Coach.route) },
                             modifier = Modifier.fillMaxWidth(),
                         ) {
-                            Text(androidx.compose.ui.res.stringResource(R.string.home_open_monitoring_btn))
+                            Text("Открыть мониторинг")
                         }
                     }
                 }
@@ -738,47 +583,26 @@ private fun HomeMiniCard(
     }
 }
 
-private fun formatDurationString(context: Context, durationMs: Long): String {
+private fun formatDuration(durationMs: Long): String {
     val totalMinutes = (durationMs / 60_000L).toInt()
     val hours = totalMinutes / 60
     val minutes = totalMinutes % 60
     return when {
-        hours > 0 && minutes > 0 -> context.getString(R.string.time_hours_minutes, hours, minutes)
-        hours > 0 -> context.getString(R.string.time_hours, hours)
-        else -> context.getString(R.string.time_minutes, minutes.coerceAtLeast(1))
+        hours > 0 && minutes > 0 -> "$hours ч $minutes мин"
+        hours > 0 -> "$hours ч"
+        else -> "${minutes.coerceAtLeast(1)} мин"
     }
 }
 
-private fun formatDurationLocalized(context: Context, durationMs: Long): String {
-    return formatDurationString(context, durationMs)
-}
-
-private fun formatRemainingLocalized(context: Context, remainingMs: Long): String {
-    val totalMinutes = (remainingMs / 60_000L).coerceAtLeast(1L).toInt()
-    val hours = totalMinutes / 60
-    val minutes = totalMinutes % 60
+private fun formatRemaining(remainingMs: Long): String {
+    val totalMinutes = (remainingMs / 60_000L).coerceAtLeast(1L)
+    val hours = totalMinutes / 60L
+    val minutes = totalMinutes % 60L
     return when {
-        hours > 0 && minutes > 0 -> context.getString(R.string.time_hours_minutes, hours, minutes)
-        hours > 0 -> context.getString(R.string.time_hours, hours)
-        else -> context.getString(R.string.time_minutes, minutes)
+        hours > 0L && minutes > 0L -> "$hours ч $minutes мин"
+        hours > 0L -> "$hours ч"
+        else -> "$minutes мин"
     }
-}
-
-private fun formatMinutesLocalized(context: Context, minutes: Int): String {
-    val hours = minutes / 60
-    val restMinutes = minutes % 60
-    return when {
-        hours > 0 && restMinutes > 0 -> context.getString(R.string.time_hours_minutes, hours, restMinutes)
-        hours > 0 -> context.getString(R.string.time_hours, hours)
-        else -> context.getString(R.string.time_minutes, restMinutes)
-    }
-}
-
-private fun snapFocusSessionMinutes(minutes: Int): Int {
-    val clamped = minutes.coerceIn(MIN_FOCUS_SESSION_MINUTES, MAX_FOCUS_SESSION_MINUTES)
-    val relative = clamped - MIN_FOCUS_SESSION_MINUTES
-    val snapped = ((relative + FOCUS_SESSION_STEP_MINUTES / 2) / FOCUS_SESSION_STEP_MINUTES) * FOCUS_SESSION_STEP_MINUTES
-    return (MIN_FOCUS_SESSION_MINUTES + snapped).coerceIn(MIN_FOCUS_SESSION_MINUTES, MAX_FOCUS_SESSION_MINUTES)
 }
 
 private fun formatAngle(value: Float): String = "${value.roundToInt()}°"

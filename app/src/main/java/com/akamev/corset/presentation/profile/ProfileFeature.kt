@@ -16,7 +16,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
@@ -25,7 +24,6 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.akamev.corset.CorsetApplication
-import com.akamev.corset.R
 import com.akamev.corset.domain.model.DeviceState
 import com.akamev.corset.presentation.common.CorsetBackground
 import com.akamev.corset.presentation.common.CorsetBottomBar
@@ -44,8 +42,6 @@ import kotlinx.coroutines.launch
 data class ProfileUiState(
     val fullName: String = "",
     val avatar: String = "C",
-    val isGuest: Boolean = false,
-    val email: String = "",
     val deviceState: DeviceState = DeviceState(),
     val statusMessage: String? = null,
 )
@@ -65,26 +61,13 @@ class ProfileViewModel(
     fun refresh() {
         viewModelScope.launch {
             val profile = app.container.userRepository.getCurrentUserProfile()
-            val isGuest = profile?.isGuest == true || app.container.appPreferences.isGuestMode()
-            val name = if (isGuest) {
-                val savedName = listOf(profile?.firstName, profile?.lastName)
-                    .filter { !it.isNullOrBlank() }
-                    .joinToString(" ")
-                if (savedName.isBlank() || savedName == "Пользователь" || savedName == "User") {
-                    app.getString(R.string.profile_guest_name)
-                } else savedName
-            } else {
-                val n = listOf(profile?.firstName, profile?.lastName)
-                    .filter { !it.isNullOrBlank() }
-                    .joinToString(" ")
-                n.ifBlank { app.getString(R.string.profile_default_user_name) }
-            }
+            val name = listOf(profile?.firstName, profile?.lastName)
+                .filter { !it.isNullOrBlank() }
+                .joinToString(" ")
             _uiState.update {
                 it.copy(
                     fullName = name,
-                    avatar = if (isGuest) "G" else (profile?.firstName?.firstOrNull()?.uppercaseChar()?.toString() ?: "C"),
-                    isGuest = isGuest,
-                    email = profile?.email.orEmpty(),
+                    avatar = profile?.firstName?.firstOrNull()?.uppercaseChar()?.toString() ?: "C",
                 )
             }
         }
@@ -94,18 +77,17 @@ class ProfileViewModel(
         app.container.bluetoothController.writeCommand("SET")
         app.container.appPreferences.setCalibrationDone(true)
         app.container.appPreferences.clearBaselineAngle()
-        _uiState.update { it.copy(statusMessage = app.getString(R.string.profile_calibrated_msg)) }
+        _uiState.update { it.copy(statusMessage = "Положение зафиксировано. Можно начинать мониторинг.") }
     }
 
     fun deleteDevice() {
         app.container.bluetoothController.clearSavedDevice()
         app.stopBluetoothService()
-        _uiState.update { it.copy(statusMessage = app.getString(R.string.profile_device_deleted_msg)) }
+        _uiState.update { it.copy(statusMessage = "Устройство удалено.") }
     }
 
     fun logout() {
         app.stopBluetoothService()
-        app.container.appPreferences.setGuestMode(false)
         app.container.authRepository.signOut()
     }
 
@@ -158,13 +140,13 @@ fun ProfileScreen(
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 HeroHeader(
-                    title = state.fullName.ifBlank { stringResource(R.string.profile_title) },
-                    subtitle = stringResource(R.string.profile_subtitle),
+                    title = state.fullName.ifBlank { "Профиль" },
+                    subtitle = "Управление устройством, калибровкой и состоянием подключения.",
                 )
                 TwoColumnStats(
-                    firstLabel = stringResource(R.string.coach_title),
-                    firstValue = if (state.deviceState.isConnected) stringResource(R.string.profile_status_online) else stringResource(R.string.profile_status_offline),
-                    secondLabel = stringResource(R.string.home_stat_battery),
+                    firstLabel = "Статус",
+                    firstValue = if (state.deviceState.isConnected) "Онлайн" else "Оффлайн",
+                    secondLabel = "Батарея",
                     secondValue = state.deviceState.batteryLevel?.let { "$it%" } ?: "--",
                 )
                 if (state.statusMessage != null) {
@@ -179,11 +161,11 @@ fun ProfileScreen(
                 }
                 if (!state.deviceState.hasSavedDevice && !state.deviceState.isConnected) {
                     EmptyState(
-                        title = stringResource(R.string.profile_device_empty_title),
-                        subtitle = stringResource(R.string.profile_device_empty_subtitle),
+                        title = "Устройство пока не добавлено",
+                        subtitle = "Подключи корсет, сохрани устройство и затем переходи к калибровке.",
                     )
                     Button(onClick = onOpenAddDevice, modifier = Modifier.fillMaxWidth()) {
-                        Text(stringResource(R.string.profile_add_device_btn))
+                        Text("Добавить устройство")
                     }
                 } else {
                     GlassCard {
@@ -191,72 +173,28 @@ fun ProfileScreen(
                             modifier = Modifier.padding(24.dp),
                             verticalArrangement = Arrangement.spacedBy(12.dp),
                         ) {
-                            Text(stringResource(R.string.profile_device_card_title), style = MaterialTheme.typography.titleLarge)
+                            Text("Текущее устройство", style = MaterialTheme.typography.titleLarge)
                             Text(
                                 text = if (state.deviceState.isConnected) {
-                                    stringResource(R.string.profile_device_connected_desc)
+                                    "Корсет подключен и готов к передаче данных."
                                 } else {
-                                    stringResource(R.string.profile_device_saved_desc)
+                                    "Адрес сохранен. Приложение будет пытаться восстановить соединение автоматически."
                                 },
                                 style = MaterialTheme.typography.bodyLarge,
                             )
                             if (state.deviceState.isBatteryStale) {
                                 Text(
-                                    text = stringResource(R.string.notif_text_waiting_data),
+                                    text = "Заряд показан по последним полученным данным.",
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             }
                             Button(onClick = viewModel::calibrate, modifier = Modifier.fillMaxWidth()) {
-                                Text(stringResource(R.string.profile_calibrate_btn))
+                                Text("Откалибровать")
                             }
                             OutlinedButton(onClick = viewModel::deleteDevice, modifier = Modifier.fillMaxWidth()) {
-                                Text(stringResource(R.string.profile_delete_device_btn))
+                                Text("Удалить устройство")
                             }
-                        }
-                    }
-                }
-                if (state.isGuest) {
-                    GlassCard {
-                        Column(
-                            modifier = Modifier.padding(20.dp),
-                            verticalArrangement = Arrangement.spacedBy(10.dp),
-                        ) {
-                            Text(stringResource(R.string.profile_guest_badge), style = MaterialTheme.typography.titleMedium)
-                            Text(
-                                text = stringResource(R.string.profile_guest_desc),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                            Button(
-                                onClick = {
-                                    viewModel.logout()
-                                    onLoggedOut()
-                                },
-                                modifier = Modifier.fillMaxWidth(),
-                            ) {
-                                Text(stringResource(R.string.profile_login_or_register_btn))
-                            }
-                        }
-                    }
-                } else {
-                    GlassCard {
-                        Column(
-                            modifier = Modifier.padding(20.dp),
-                            verticalArrangement = Arrangement.spacedBy(6.dp),
-                        ) {
-                            Text(stringResource(R.string.profile_cloud_sync_title), style = MaterialTheme.typography.titleMedium)
-                            if (state.email.isNotBlank()) {
-                                Text(
-                                    text = stringResource(R.string.profile_cloud_sync_account, state.email),
-                                    style = MaterialTheme.typography.bodyMedium,
-                                )
-                            }
-                            Text(
-                                text = stringResource(R.string.profile_cloud_sync_desc),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
                         }
                     }
                 }
@@ -267,7 +205,7 @@ fun ProfileScreen(
                     },
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Text(stringResource(if (state.isGuest) R.string.profile_reset_guest_btn else R.string.profile_logout_btn))
+                    Text("Выйти из аккаунта")
                 }
             }
         }

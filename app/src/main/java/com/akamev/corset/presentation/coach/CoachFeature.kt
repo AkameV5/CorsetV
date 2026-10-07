@@ -110,21 +110,17 @@ class CoachViewModel(
     private fun refreshMonitoringState() {
         val isMonitoringStarted = app.container.appPreferences.isCalibrationDone()
         baselineAngle = app.container.appPreferences.getBaselineAngle()
-        val isRu = Locale.getDefault().language == "ru"
         _uiState.update {
             it.copy(
                 isMonitoringStarted = isMonitoringStarted,
                 aiAdvice = if (isMonitoringStarted) {
                     if (baselineAngle == null) {
-                        if (isRu) "Мониторинг запущен. Ждём первые данные, чтобы зафиксировать опорное положение."
-                        else "Monitoring started. Waiting for telemetry to establish baseline posture."
+                        "Мониторинг запущен. Ждём первые данные, чтобы зафиксировать опорное положение."
                     } else {
-                        if (isRu) "Опорный угол: ${formatAngle(baselineAngle ?: 0f)}"
-                        else "Baseline angle: ${formatAngle(baselineAngle ?: 0f)}"
+                        "Опорный угол: ${formatAngle(baselineAngle ?: 0f)}"
                     }
                 } else {
-                    if (isRu) "Нажмите «Откалибровать» в профиле, чтобы начать отслеживание."
-                    else "Tap \"Calibrate\" in Profile to start posture tracking."
+                    "Нажмите «Откалибровать» в профиле, чтобы начать отслеживание."
                 },
             )
         }
@@ -149,7 +145,7 @@ class CoachViewModel(
     private fun loadHistory() {
         viewModelScope.launch {
             historyPoints.clear()
-            historyPoints.addAll(app.container.postureRepository.loadHistory())
+            historyPoints.addAll(app.container.postureHistoryLocalDataSource.loadHistory())
             _uiState.update { it.copy(chartPoints = computeChartPoints(it.selectedFilter)) }
         }
     }
@@ -232,32 +228,12 @@ class CoachViewModel(
         isAiBusy = true
         _uiState.update { it.copy(isAiLoading = true) }
         viewModelScope.launch {
-            val isRu = Locale.getDefault().language == "ru"
-            val prompt = if (isRu) {
-                "Анализ осанки. Среднее отклонение за 20 минут: ${
-                    String.format(Locale.US, "%.1f", averageAngle)
-                } градусов. Порог реакции: ${String.format(Locale.US, "%.1f", currentAlertThreshold())} градусов. Оценка: $score%. Дай один короткий совет на русском языке."
-            } else {
-                "Posture analysis. 20-min average deviation: ${
-                    String.format(Locale.US, "%.1f", averageAngle)
-                } degrees. Threshold: ${String.format(Locale.US, "%.1f", currentAlertThreshold())} degrees. Score: $score%. Give one concise practical tip in English."
-            }
-            val systemInstruction = if (isRu) {
-                "Ты эксперт по эргономике умного корсета CorsetV. Дай ровно 1-2 конкретных предложения: что сделать прямо сейчас для мышц спины и шеи (без диагнозов, без банальностей вроде 'держи спину ровно')."
-            } else {
-                "You are an ergonomics expert for the CorsetV posture tracker. Provide exactly 1-2 actionable sentences on what to do right now for neck and back muscles (no diagnoses, no clichés like 'keep your back straight')."
-            }
+            val prompt = "Анализ осанки. Среднее отклонение за 20 минут: ${
+                String.format(Locale.US, "%.1f", averageAngle)
+            } градусов. Порог реакции: ${String.format(Locale.US, "%.1f", currentAlertThreshold())} градусов. Оценка: $score%. Дай один короткий совет на русском языке."
             val advice = runCatching {
-                app.container.aiRemoteDataSource.requestChat(
-                    systemInstruction = systemInstruction,
-                    conversation = listOf(
-                        com.akamev.corset.domain.model.AiChatTurn(
-                            role = com.akamev.corset.domain.model.AiChatRole.User,
-                            text = prompt,
-                        ),
-                    ),
-                )
-            }.getOrElse { _: Throwable ->
+                app.container.aiRemoteDataSource.requestText(prompt)
+            }.getOrElse {
                 fallbackAdvice(averageAngle)
             }
             _uiState.update { it.copy(aiAdvice = advice, isAiLoading = false) }
@@ -266,19 +242,10 @@ class CoachViewModel(
     }
 
     private fun fallbackAdvice(averageAngle: Float): String {
-        val isRu = Locale.getDefault().language == "ru"
-        return if (isRu) {
-            when {
-                averageAngle < 3f -> "Положение ровное. Сохраняй этот темп."
-                averageAngle < 7f -> "Есть небольшой уход от базы. Раскрой грудной отдел и выровняй плечи."
-                else -> "Отклонение устойчивое. Выпрямись и сделай короткую паузу."
-            }
-        } else {
-            when {
-                averageAngle < 3f -> "Posture is well-aligned. Keep this pace."
-                averageAngle < 7f -> "Minor slouch detected. Open your chest and gently roll your shoulders back."
-                else -> "Consistent posture deviation. Straighten up and take a quick 30-second pause."
-            }
+        return when {
+            averageAngle < 3f -> "Положение ровное. Сохраняй этот темп."
+            averageAngle < 7f -> "Есть небольшой уход от базы. Раскрой грудной отдел и выровняй плечи."
+            else -> "Отклонение устойчивое. Выпрямись и сделай короткую паузу."
         }
     }
 
@@ -310,21 +277,21 @@ fun CoachScreen(
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 HeroHeader(
-                    title = androidx.compose.ui.res.stringResource(com.akamev.corset.R.string.coach_title),
-                    subtitle = androidx.compose.ui.res.stringResource(com.akamev.corset.R.string.coach_subtitle),
+                    title = "Мониторинг",
+                    subtitle = "Текущий угол отклонения, история за выбранный период и краткие рекомендации по осанке.",
                 )
                 GlassCard {
                     Column(
                         modifier = Modifier.padding(20.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
-                        Text(androidx.compose.ui.res.stringResource(com.akamev.corset.R.string.coach_alert_mode_title), style = MaterialTheme.typography.titleLarge)
+                        Text("Режим напоминаний", style = MaterialTheme.typography.titleLarge)
                         Text(
-                            text = "${androidx.compose.ui.res.stringResource(state.alertMode.titleRes)} • ${formatAngle(state.thresholdAngle)}",
+                            text = "${state.alertMode.title} • ${formatAngle(state.thresholdAngle)}",
                             style = MaterialTheme.typography.bodyLarge,
                         )
                         Text(
-                            text = androidx.compose.ui.res.stringResource(state.alertMode.descriptionRes),
+                            text = state.alertMode.description,
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -336,14 +303,14 @@ fun CoachScreen(
                                 FilterChip(
                                     selected = state.alertMode == mode,
                                     onClick = { viewModel.selectAlertMode(mode) },
-                                    label = { Text(androidx.compose.ui.res.stringResource(mode.titleRes)) },
+                                    label = { Text(mode.title) },
                                 )
                             }
                         }
                         if (state.alertMode == PostureAlertMode.Custom) {
                             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                 Text(
-                                    text = androidx.compose.ui.res.stringResource(com.akamev.corset.R.string.coach_custom_slider_label, formatAngle(state.customAlertAngle)),
+                                    text = "Свой порог: ${formatAngle(state.customAlertAngle)}",
                                     style = MaterialTheme.typography.bodyLarge,
                                 )
                                 Slider(
@@ -352,7 +319,7 @@ fun CoachScreen(
                                     valueRange = MIN_CUSTOM_THRESHOLD..MAX_CUSTOM_THRESHOLD,
                                 )
                                 Text(
-                                    text = androidx.compose.ui.res.stringResource(com.akamev.corset.R.string.coach_custom_slider_hint),
+                                    text = "Ниже угол — корсет реагирует строже. Выше угол — мягче и спокойнее.",
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
@@ -362,14 +329,14 @@ fun CoachScreen(
                 }
                 if (!state.isMonitoringStarted) {
                     EmptyState(
-                        title = androidx.compose.ui.res.stringResource(com.akamev.corset.R.string.coach_not_started_title),
-                        subtitle = androidx.compose.ui.res.stringResource(com.akamev.corset.R.string.coach_not_started_subtitle),
+                        title = "Мониторинг пока не активирован",
+                        subtitle = "Открой профиль и нажми «Откалибровать», чтобы зафиксировать исходную позу.",
                     )
                 } else {
                     TwoColumnStats(
-                        firstLabel = androidx.compose.ui.res.stringResource(com.akamev.corset.R.string.coach_score_label),
+                        firstLabel = "Score",
                         firstValue = "${state.score}%",
-                        secondLabel = androidx.compose.ui.res.stringResource(com.akamev.corset.R.string.coach_angle_label),
+                        secondLabel = "Угол",
                         secondValue = state.currentAngle?.let { formatWholeAngle(it) } ?: "--",
                     )
                     Row(
@@ -380,7 +347,7 @@ fun CoachScreen(
                             FilterChip(
                                 selected = state.selectedFilter == filter,
                                 onClick = { viewModel.selectFilter(filter) },
-                                label = { Text(androidx.compose.ui.res.stringResource(filter.titleRes)) },
+                                label = { Text(filter.title) },
                             )
                         }
                     }
@@ -389,9 +356,9 @@ fun CoachScreen(
                             modifier = Modifier.padding(20.dp),
                             verticalArrangement = Arrangement.spacedBy(12.dp),
                         ) {
-                            Text(androidx.compose.ui.res.stringResource(com.akamev.corset.R.string.coach_chart_title), style = MaterialTheme.typography.titleLarge)
+                            Text("График", style = MaterialTheme.typography.titleLarge)
                             Text(
-                                text = androidx.compose.ui.res.stringResource(com.akamev.corset.R.string.coach_chart_desc, formatAngle(state.thresholdAngle)),
+                                text = "Зелёная линия показывает порог реакции корсета примерно с ${formatAngle(state.thresholdAngle)}.",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -409,9 +376,9 @@ fun CoachScreen(
                             modifier = Modifier.padding(20.dp),
                             verticalArrangement = Arrangement.spacedBy(12.dp),
                         ) {
-                            Text(androidx.compose.ui.res.stringResource(com.akamev.corset.R.string.coach_recommendation_title), style = MaterialTheme.typography.titleLarge)
+                            Text("Рекомендация", style = MaterialTheme.typography.titleLarge)
                             if (state.isAiLoading) {
-                                Text(androidx.compose.ui.res.stringResource(com.akamev.corset.R.string.coach_recommendation_loading), style = MaterialTheme.typography.bodyLarge)
+                                Text("Собираем рекомендацию...", style = MaterialTheme.typography.bodyLarge)
                             } else {
                                 Text(state.aiAdvice, style = MaterialTheme.typography.bodyLarge)
                             }
