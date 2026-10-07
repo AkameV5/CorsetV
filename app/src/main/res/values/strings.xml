@@ -246,4 +246,19 @@
     <string name="notif_alert_bad_posture_text">You have been slouching for %1$s. Straighten up and take a quick pause.</string>
     <string name="notif_alert_session_end_title">Session completed</string>
     <string name="notif_alert_session_end_text">Posture session finished. Check the Today tab for your summary.</string>
+
+    <!-- App Widget -->
+    <string name="widget_name">CorsetV Status</string>
+    <string name="widget_description">Live posture deviation, battery level, and quick calibration.</string>
+    <string name="widget_status_online">Online</string>
+    <string name="widget_status_offline">Offline</string>
+    <string name="widget_status_no_device">Not paired</string>
+    <string name="widget_posture_good">Upright posture</string>
+    <string name="widget_posture_warning">Minor slouch</string>
+    <string name="widget_posture_bad">Slouch detected</string>
+    <string name="widget_posture_waiting">Waiting for data…</string>
+    <string name="widget_daily_score">Today: %1$d%%</string>
+    <string name="widget_btn_calibrate">Calibrate</string>
+    <string name="widget_tap_to_open">Tap to open CorsetV</string>
+    <string name="widget_calibrated_toast">Corset calibrated successfully</string>
 </resources>

@@ -57,6 +57,20 @@
             </intent-filter>
         </service>
 
+        <receiver
+            android:name=".presentation.widget.CorsetAppWidgetProvider"
+            android:exported="true"
+            android:label="@string/widget_name">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="com.akamev.corset.widget.ACTION_CALIBRATE" />
+                <action android:name="com.akamev.corset.widget.ACTION_FORCE_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/corset_widget_info" />
+        </receiver>
+
     </application>
 
 </manifest>

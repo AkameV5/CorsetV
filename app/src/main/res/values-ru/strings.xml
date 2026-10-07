@@ -246,4 +246,19 @@
     <string name="notif_alert_bad_posture_text">Ты сутулишься уже %1$s. Выпрямись и сделай короткую паузу.</string>
     <string name="notif_alert_session_end_title">Сессия завершена</string>
     <string name="notif_alert_session_end_text">Сессия подошла к концу. Загляни на экран «Сегодня» за итогом.</string>
+
+    <!-- App Widget -->
+    <string name="widget_name">Статус CorsetV</string>
+    <string name="widget_description">Текущее отклонение осанки, заряд корсета и быстрая калибровка.</string>
+    <string name="widget_status_online">На связи</string>
+    <string name="widget_status_offline">Не в сети</string>
+    <string name="widget_status_no_device">Не привязан</string>
+    <string name="widget_posture_good">Ровная осанка</string>
+    <string name="widget_posture_warning">Легкий наклон</string>
+    <string name="widget_posture_bad">Сутулость</string>
+    <string name="widget_posture_waiting">Ожидание данных…</string>
+    <string name="widget_daily_score">Сегодня: %1$d%%</string>
+    <string name="widget_btn_calibrate">Калибровка</string>
+    <string name="widget_tap_to_open">Нажмите, чтобы открыть</string>
+    <string name="widget_calibrated_toast">Корсет откалиброван</string>
 </resources>

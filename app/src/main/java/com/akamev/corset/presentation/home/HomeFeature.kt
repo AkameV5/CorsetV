@@ -175,6 +175,7 @@ class HomeViewModel(
         app.container.bluetoothController.writeCommand("SET")
         app.container.appPreferences.setCalibrationDone(true)
         app.container.appPreferences.clearBaselineAngle()
+        com.akamev.corset.presentation.widget.CorsetAppWidgetProvider.updateAllWidgets(app)
         showStatusMessage(R.string.coach_calibration_sent)
     }
 

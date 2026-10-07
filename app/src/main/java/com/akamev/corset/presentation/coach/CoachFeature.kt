@@ -112,6 +112,7 @@ class CoachViewModel(
         app.container.bluetoothController.writeCommand("SET")
         app.container.appPreferences.setCalibrationDone(true)
         app.container.appPreferences.clearBaselineAngle()
+        com.akamev.corset.presentation.widget.CorsetAppWidgetProvider.updateAllWidgets(app)
         refreshMonitoringState()
     }
 

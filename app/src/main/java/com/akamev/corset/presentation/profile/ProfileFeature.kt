@@ -110,6 +110,7 @@ class ProfileViewModel(
         app.container.bluetoothController.writeCommand("SET")
         app.container.appPreferences.setCalibrationDone(true)
         app.container.appPreferences.clearBaselineAngle()
+        com.akamev.corset.presentation.widget.CorsetAppWidgetProvider.updateAllWidgets(app)
         _uiState.update { it.copy(statusMessage = app.getString(R.string.profile_calibrated_msg)) }
     }
 

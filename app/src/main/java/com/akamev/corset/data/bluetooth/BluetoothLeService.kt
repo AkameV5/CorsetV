@@ -19,6 +19,7 @@ import com.akamev.corset.data.wear.WearStateSnapshot
 import com.akamev.corset.data.wear.WearSyncController
 import com.akamev.corset.domain.model.DeviceState
 import com.akamev.corset.domain.model.Telemetry
+import com.akamev.corset.presentation.widget.CorsetAppWidgetProvider
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -38,6 +39,7 @@ class BluetoothLeService : Service() {
     private var observersStarted = false
     private var currentDeviceState = DeviceState()
     private var lastTelemetryAt: Long? = null
+    private var lastWidgetUpdateAt: Long = 0L
     private var badPostureStartedAt: Long? = null
     private var lastPostureAlertAt: Long? = null
     private var lastCompletedSessionEndAt: Long? = null
@@ -73,12 +75,14 @@ class BluetoothLeService : Service() {
         }
 
         app.container.bluetoothController.connectToSavedDevice()
+        CorsetAppWidgetProvider.updateAllWidgets(this)
         return START_STICKY
     }
 
     override fun onDestroy() {
         serviceScope.cancel()
         app.container.bluetoothController.destroy()
+        CorsetAppWidgetProvider.updateAllWidgets(this)
         super.onDestroy()
     }
 
@@ -88,6 +92,7 @@ class BluetoothLeService : Service() {
         serviceScope.launch {
             app.container.bluetoothController.deviceState.collectLatest { state ->
                 currentDeviceState = state
+                CorsetAppWidgetProvider.updateAllWidgets(this@BluetoothLeService)
                 if (!shouldKeepServiceAlive()) {
                     stopForeground(STOP_FOREGROUND_REMOVE)
                     stopSelf()
@@ -104,7 +109,16 @@ class BluetoothLeService : Service() {
                 processSessionTelemetry(telemetry)
                 syncWatchState()
                 refreshNotification()
+                updateWidgetThrottled()
             }
+        }
+    }
+
+    private fun updateWidgetThrottled() {
+        val now = System.currentTimeMillis()
+        if (now - lastWidgetUpdateAt >= 2000L) {
+            lastWidgetUpdateAt = now
+            CorsetAppWidgetProvider.updateAllWidgets(this)
         }
     }
 

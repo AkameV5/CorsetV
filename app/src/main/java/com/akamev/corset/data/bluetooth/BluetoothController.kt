@@ -73,6 +73,8 @@ class BluetoothController(
 
     val deviceState: StateFlow<DeviceState> = _deviceState.asStateFlow()
     val telemetry: SharedFlow<Telemetry> = _telemetry.asSharedFlow()
+    var lastTelemetry: Telemetry? = null
+        private set
     val scanResults: StateFlow<List<ScannedDevice>> = _scanResults.asStateFlow()
     val isScanning: StateFlow<Boolean> = _isScanning.asStateFlow()
 
@@ -470,6 +472,7 @@ class BluetoothController(
 
             val payload = characteristic.value?.toString(StandardCharsets.UTF_8)
             val telemetryData = parseTelemetry(payload) ?: return
+            lastTelemetry = telemetryData
             telemetryData.batteryLevel?.let(appPreferences::saveLastBatteryLevel)
             publishState()
             _telemetry.tryEmit(telemetryData)
