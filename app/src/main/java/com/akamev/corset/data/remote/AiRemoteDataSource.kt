@@ -20,45 +20,50 @@ class AiRemoteDataSource(
         systemInstruction: String,
         conversation: List<AiChatTurn>,
     ): String = withContext(Dispatchers.IO) {
-        val jsonBody = JSONObject().apply {
-            val messagesArray = JSONArray().apply {
-                if (systemInstruction.isNotBlank()) {
-                    put(JSONObject().apply {
-                        put("role", "system")
-                        put("content", systemInstruction)
-                    })
-                }
-                conversation.forEach { turn ->
-                    put(JSONObject().apply {
-                        val roleStr = when (turn.role) {
-                            AiChatRole.User -> "user"
-                            AiChatRole.Model -> "assistant"
-                        }
-                        put("role", roleStr)
-                        put("content", turn.text)
-                    })
-                }
-            }
-            put("messages", messagesArray)
-        }
-
-        val mediaType = "application/json; charset=utf-8".toMediaType()
-        val requestBody = jsonBody.toString().toRequestBody(mediaType)
-        val request = Request.Builder()
-            .url("https://text.pollinations.ai/")
-            .post(requestBody)
-            .build()
-
+        val modelsToTry = listOf("openai", "openai-fast")
         var lastException: Exception? = null
+
         for (attempt in 1..4) {
+            val currentModel = modelsToTry[(attempt - 1) % modelsToTry.size]
+            val jsonBody = JSONObject().apply {
+                val messagesArray = JSONArray().apply {
+                    if (systemInstruction.isNotBlank()) {
+                        put(JSONObject().apply {
+                            put("role", "system")
+                            put("content", systemInstruction)
+                        })
+                    }
+                    conversation.forEach { turn ->
+                        put(JSONObject().apply {
+                            val roleStr = when (turn.role) {
+                                AiChatRole.User -> "user"
+                                AiChatRole.Model -> "assistant"
+                            }
+                            put("role", roleStr)
+                            put("content", turn.text)
+                        })
+                    }
+                }
+                put("messages", messagesArray)
+                put("model", currentModel)
+                put("jsonMode", false)
+            }
+
+            val mediaType = "application/json; charset=utf-8".toMediaType()
+            val requestBody = jsonBody.toString().toRequestBody(mediaType)
+            val request = Request.Builder()
+                .url("https://text.pollinations.ai/")
+                .post(requestBody)
+                .build()
+
             try {
                 httpClient.newCall(request).execute().use { response ->
                     val responseBody = response.body?.string()?.trim()
                     if (response.code == 429) {
-                        throw IOException("Сервер перегружен (ошибка 429). Повторная попытка...")
+                        throw IOException("Сервер перегружен (429) для модели $currentModel. Пробуем резервную...")
                     }
-                    if (!response.isSuccessful || responseBody.isNullOrBlank()) {
-                        throw IOException("Ошибка сервера AI: ${response.code} ${response.message}")
+                    if (!response.isSuccessful || responseBody.isNullOrBlank() || responseBody == "{}" || responseBody.startsWith("{\"error\":")) {
+                        throw IOException("Некорректный ответ AI: ${response.code} ${response.message}")
                     }
                     return@withContext responseBody
                 }

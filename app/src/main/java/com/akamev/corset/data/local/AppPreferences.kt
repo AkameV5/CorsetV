@@ -153,6 +153,29 @@ class AppPreferences(context: Context) {
         bluetoothPrefs.edit().remove(KEY_SAVED_DEVICE_ADDRESS).apply()
     }
 
+    fun isGuestMode(): Boolean = appPrefs.getBoolean(KEY_GUEST_MODE, false)
+
+    fun setGuestMode(isGuest: Boolean) {
+        appPrefs.edit().putBoolean(KEY_GUEST_MODE, isGuest).apply()
+    }
+
+    fun getGuestFirstName(): String = appPrefs.getString(KEY_GUEST_FIRST_NAME, "Пользователь") ?: "Пользователь"
+
+    fun getGuestLastName(): String = appPrefs.getString(KEY_GUEST_LAST_NAME, "") ?: ""
+
+    fun saveGuestName(firstName: String, lastName: String) {
+        appPrefs.edit()
+            .putString(KEY_GUEST_FIRST_NAME, firstName)
+            .putString(KEY_GUEST_LAST_NAME, lastName)
+            .apply()
+    }
+
+    fun getGuestStreak(): Long = appPrefs.getLong(KEY_GUEST_STREAK, 0L)
+
+    fun saveGuestStreak(streak: Long) {
+        appPrefs.edit().putLong(KEY_GUEST_STREAK, streak).apply()
+    }
+
     fun todayKey(): String = DATE_FORMAT.format(Date())
 
     private companion object {
@@ -172,6 +195,10 @@ class AppPreferences(context: Context) {
         const val KEY_GOOD_FRAMES = "good_frames"
         const val KEY_TOTAL_FRAMES = "total_frames"
         const val KEY_SAVED_DEVICE_ADDRESS = "saved_device_address"
+        const val KEY_GUEST_MODE = "guest_mode"
+        const val KEY_GUEST_FIRST_NAME = "guest_first_name"
+        const val KEY_GUEST_LAST_NAME = "guest_last_name"
+        const val KEY_GUEST_STREAK = "guest_streak"
         const val DEFAULT_CUSTOM_ALERT_ANGLE = 7f
         const val MIN_FOCUS_SESSION_MINUTES = 5
         const val MAX_FOCUS_SESSION_MINUTES = 180

@@ -5,8 +5,11 @@ import com.akamev.corset.data.bluetooth.BluetoothController
 import com.akamev.corset.data.local.AppPreferences
 import com.akamev.corset.data.local.ChatHistoryLocalDataSource
 import com.akamev.corset.data.local.PostureHistoryLocalDataSource
+import com.akamev.corset.data.local.database.AppDatabase
 import com.akamev.corset.data.remote.AiRemoteDataSource
 import com.akamev.corset.data.repository.AuthRepository
+import com.akamev.corset.data.repository.ChatRepository
+import com.akamev.corset.data.repository.PostureRepository
 import com.akamev.corset.data.repository.UserRepository
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
@@ -25,10 +28,20 @@ class AppContainer(context: Context) {
             .build()
     }
 
+    val appDatabase by lazy { AppDatabase.getInstance(appContext) }
     val appPreferences by lazy { AppPreferences(appContext) }
     val bluetoothController by lazy { BluetoothController(appContext, appPreferences) }
     val authRepository by lazy { AuthRepository(firebaseAuth) }
-    val userRepository by lazy { UserRepository(firebaseAuth, firestore) }
+    val postureRepository by lazy { PostureRepository(appContext, appDatabase.postureDao()) }
+    val chatRepository by lazy { ChatRepository(appContext, appDatabase.chatDao()) }
+    val userRepository by lazy {
+        UserRepository(
+            firebaseAuth = firebaseAuth,
+            firestore = firestore,
+            appPreferences = appPreferences,
+            dailySummaryDao = appDatabase.dailySummaryDao(),
+        )
+    }
     val chatHistoryLocalDataSource by lazy { ChatHistoryLocalDataSource(appContext) }
     val postureHistoryLocalDataSource by lazy { PostureHistoryLocalDataSource(appContext) }
     val aiRemoteDataSource by lazy { AiRemoteDataSource(httpClient) }

@@ -26,6 +26,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.akamev.corset.presentation.navigation.bottomDestinations
 
@@ -156,11 +157,12 @@ fun CorsetBottomBar(
         containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
     ) {
         bottomDestinations.forEach { destination ->
+            val label = stringResource(destination.titleRes)
             NavigationBarItem(
                 selected = currentRoute == destination.route,
                 onClick = { onNavigate(destination.route) },
-                icon = { androidx.compose.material3.Icon(destination.icon, contentDescription = destination.title) },
-                label = { Text(destination.title) },
+                icon = { androidx.compose.material3.Icon(destination.icon, contentDescription = label) },
+                label = { Text(label) },
                 colors = NavigationBarItemDefaults.colors(
                     selectedIconColor = MaterialTheme.colorScheme.onPrimary,
                     selectedTextColor = MaterialTheme.colorScheme.primary,

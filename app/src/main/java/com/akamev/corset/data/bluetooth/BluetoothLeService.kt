@@ -143,29 +143,30 @@ class BluetoothLeService : Service() {
         val sessionActive = sessionRemainingMs > 0L
 
         val title = when {
-            sessionActive -> "Фокус-сессия идёт"
-            currentDeviceState.isConnected -> "Корсет подключён"
-            currentDeviceState.hasSavedDevice -> "Корсет не на связи"
-            else -> "Корсет не настроен"
+            sessionActive && currentDeviceState.isConnected -> getString(R.string.notif_title_session_active)
+            sessionActive -> getString(R.string.notif_title_session_paused)
+            currentDeviceState.isConnected -> getString(R.string.notif_title_connected)
+            currentDeviceState.hasSavedDevice -> getString(R.string.notif_title_searching)
+            else -> getString(R.string.notif_title_disconnected)
         }
         val text = when {
             sessionActive && currentDeviceState.isConnected ->
-                "Осталось ${formatRemaining(sessionRemainingMs)}. Следим за осанкой в фоне"
+                getString(R.string.notif_text_session_running, formatRemaining(sessionRemainingMs))
 
             sessionActive ->
-                "Сессия активна, но корсет сейчас не на связи"
+                getString(R.string.notif_text_session_no_link)
 
             currentDeviceState.isConnected && isTelemetryFresh ->
-                "Получаем данные и следим за осанкой в фоне"
+                getString(R.string.notif_text_monitoring)
 
             currentDeviceState.isConnected ->
-                "Соединение есть, ждём свежую телеметрию"
+                getString(R.string.notif_text_waiting_data)
 
             currentDeviceState.hasSavedDevice ->
-                "Пытаемся восстановить связь с сохранённым устройством"
+                getString(R.string.notif_text_reconnecting)
 
             else ->
-                "Добавь корсет в приложении, чтобы включить фоновый режим"
+                getString(R.string.notif_text_add_device_prompt)
         }
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
@@ -185,7 +186,7 @@ class BluetoothLeService : Service() {
         rememberAngle(deviation)
 
         serviceScope.launch(Dispatchers.IO) {
-            app.container.postureHistoryLocalDataSource.savePoint(
+            app.container.postureRepository.savePoint(
                 timestamp = System.currentTimeMillis(),
                 angle = deviation,
             )
@@ -214,8 +215,8 @@ class BluetoothLeService : Service() {
         if (shouldNotify) {
             notifyAlert(
                 notificationId = POSTURE_ALERT_NOTIFICATION_ID,
-                title = "Осанка просела",
-                text = "Ты сутулишься уже ${formatDuration(duration)}. Выпрямись и сделай короткую паузу.",
+                title = getString(R.string.notif_alert_bad_posture_title),
+                text = getString(R.string.notif_alert_bad_posture_text, formatDuration(duration)),
             )
             lastPostureAlertAt = now
         }
@@ -244,8 +245,8 @@ class BluetoothLeService : Service() {
 
         notifyAlert(
             notificationId = SESSION_ALERT_NOTIFICATION_ID,
-            title = "Сессия завершена",
-            text = "45 минут закончились. Загляни на экран «Сегодня» за итогом.",
+            title = getString(R.string.notif_alert_session_end_title),
+            text = getString(R.string.notif_alert_session_end_text),
         )
     }
 
@@ -286,12 +287,12 @@ class BluetoothLeService : Service() {
 
         val serviceChannel = NotificationChannel(
             CHANNEL_ID,
-            "Corset Background Service",
+            getString(R.string.notif_channel_service_name),
             NotificationManager.IMPORTANCE_LOW,
         )
         val alertsChannel = NotificationChannel(
             ALERTS_CHANNEL_ID,
-            "Corset Alerts",
+            getString(R.string.notif_channel_alerts_name),
             NotificationManager.IMPORTANCE_DEFAULT,
         )
         val manager = getSystemService(NotificationManager::class.java)
@@ -328,18 +329,20 @@ class BluetoothLeService : Service() {
         val hours = totalMinutes / 60L
         val minutes = totalMinutes % 60L
         return when {
-            hours > 0L && minutes > 0L -> "$hours ч $minutes мин"
-            hours > 0L -> "$hours ч"
-            else -> "$minutes мин"
+            hours > 0L && minutes > 0L -> getString(R.string.time_hours_minutes, hours, minutes)
+            hours > 0L -> getString(R.string.time_hours, hours)
+            else -> getString(R.string.time_minutes, minutes)
         }
     }
 
     private fun formatDuration(durationMs: Long): String {
         val totalMinutes = (durationMs / 60_000L).coerceAtLeast(1L)
-        return if (totalMinutes >= 60L) {
-            String.format(Locale.getDefault(), "%d ч %d мин", totalMinutes / 60L, totalMinutes % 60L)
+        val hours = totalMinutes / 60L
+        val minutes = totalMinutes % 60L
+        return if (hours > 0L) {
+            getString(R.string.time_hours_minutes, hours, minutes)
         } else {
-            "$totalMinutes мин"
+            getString(R.string.time_minutes, totalMinutes)
         }
     }
 

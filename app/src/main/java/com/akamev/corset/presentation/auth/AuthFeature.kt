@@ -1,5 +1,6 @@
 package com.akamev.corset.presentation.auth
 
+import android.content.Context
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -19,6 +20,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -29,6 +31,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -40,6 +43,8 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.akamev.corset.CorsetApplication
+import com.akamev.corset.R
+import com.akamev.corset.data.local.AppPreferences
 import com.akamev.corset.data.repository.AuthRepository
 import com.akamev.corset.data.repository.UserRepository
 import com.akamev.corset.presentation.common.CorsetBackground
@@ -65,8 +70,10 @@ data class AuthUiState(
 )
 
 class AuthViewModel(
+    private val context: Context,
     private val authRepository: AuthRepository,
     private val userRepository: UserRepository,
+    private val appPreferences: AppPreferences,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(AuthUiState())
@@ -79,23 +86,30 @@ class AuthViewModel(
     fun updateLastName(value: String) = _uiState.update { it.copy(lastName = value, errorMessage = null) }
 
     suspend fun resolveStartDestination(): String {
+        if (appPreferences.isGuestMode()) return CorsetDestination.Home.route
         val user = authRepository.currentUser() ?: return CorsetDestination.Login.route
         if (!user.isEmailVerified) return CorsetDestination.Verification.route
         return if (userRepository.hasCompletedProfile(user.uid)) {
-            CorsetDestination.Profile.route
+            CorsetDestination.Home.route
         } else {
             CorsetDestination.SetupProfile.route
         }
     }
 
+    fun continueAsGuest(): String {
+        appPreferences.setGuestMode(true)
+        return CorsetDestination.Home.route
+    }
+
     suspend fun login(): String? {
         val state = uiState.value
         if (state.email.isBlank() || state.password.isBlank()) {
-            _uiState.update { it.copy(errorMessage = "Заполните все поля.") }
+            _uiState.update { it.copy(errorMessage = context.getString(R.string.auth_fill_all_fields)) }
             return null
         }
 
         return runAction {
+            appPreferences.setGuestMode(false)
             authRepository.login(state.email.trim(), state.password.trim())
             resolveStartDestination()
         }
@@ -104,22 +118,23 @@ class AuthViewModel(
     suspend fun register(): Boolean {
         val state = uiState.value
         if (state.email.isBlank() || state.password.isBlank() || state.confirmPassword.isBlank()) {
-            _uiState.update { it.copy(errorMessage = "Заполните все поля.") }
+            _uiState.update { it.copy(errorMessage = context.getString(R.string.auth_fill_all_fields)) }
             return false
         }
         if (state.password != state.confirmPassword) {
-            _uiState.update { it.copy(errorMessage = "Пароли не совпадают.") }
+            _uiState.update { it.copy(errorMessage = context.getString(R.string.auth_passwords_mismatch)) }
             return false
         }
         if (state.password.length < 6) {
-            _uiState.update { it.copy(errorMessage = "Минимальная длина пароля — 6 символов.") }
+            _uiState.update { it.copy(errorMessage = context.getString(R.string.auth_password_too_short)) }
             return false
         }
 
         return runAction {
+            appPreferences.setGuestMode(false)
             authRepository.register(state.email.trim(), state.password.trim())
             _uiState.update {
-                it.copy(infoMessage = "Аккаунт создан. Письмо для подтверждения уже отправлено.")
+                it.copy(infoMessage = context.getString(R.string.auth_account_created_check_email))
             }
             true
         } ?: false
@@ -129,7 +144,7 @@ class AuthViewModel(
         runAction {
             val email = authRepository.resendVerification()
             _uiState.update {
-                it.copy(infoMessage = "Письмо отправлено повторно на ${email.orEmpty()}.")
+                it.copy(infoMessage = context.getString(R.string.auth_resend_verification_success, email.orEmpty()))
             }
         }
     }
@@ -138,7 +153,7 @@ class AuthViewModel(
         val user = authRepository.reloadCurrentUser() ?: return CorsetDestination.Login.route
         return if (user.isEmailVerified) {
             if (userRepository.hasCompletedProfile(user.uid)) {
-                CorsetDestination.Profile.route
+                CorsetDestination.Home.route
             } else {
                 CorsetDestination.SetupProfile.route
             }
@@ -150,7 +165,7 @@ class AuthViewModel(
     suspend fun saveProfile(): Boolean {
         val state = uiState.value
         if (state.firstName.isBlank() || state.lastName.isBlank()) {
-            _uiState.update { it.copy(errorMessage = "Введите имя и фамилию.") }
+            _uiState.update { it.copy(errorMessage = context.getString(R.string.auth_fill_all_fields)) }
             return false
         }
 
@@ -170,7 +185,7 @@ class AuthViewModel(
             _uiState.update { it.copy(isLoading = true, errorMessage = null, infoMessage = null) }
             block()
         } catch (error: Exception) {
-            _uiState.update { it.copy(errorMessage = error.message ?: "Что-то пошло не так.") }
+            _uiState.update { it.copy(errorMessage = error.message ?: context.getString(R.string.auth_default_error)) }
             null
         } finally {
             _uiState.update { it.copy(isLoading = false) }
@@ -181,8 +196,10 @@ class AuthViewModel(
         fun factory(app: CorsetApplication): ViewModelProvider.Factory = viewModelFactory {
             initializer {
                 AuthViewModel(
+                    context = app,
                     authRepository = app.container.authRepository,
                     userRepository = app.container.userRepository,
+                    appPreferences = app.container.appPreferences,
                 )
             }
         }
@@ -205,8 +222,8 @@ fun SplashScreen(
             verticalArrangement = Arrangement.Center,
         ) {
             HeroHeader(
-                title = "CorsetV",
-                subtitle = "Персональный контроль осанки, подключение корсета и рекомендации в одном приложении.",
+                title = stringResource(R.string.app_tagline),
+                subtitle = stringResource(R.string.app_subtitle),
             )
             Spacer(modifier = Modifier.height(24.dp))
             CircularProgressIndicator()
@@ -223,11 +240,11 @@ fun LoginScreen(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val keyboard = LocalSoftwareKeyboardController.current
 
-    AuthScaffold(title = "Вход", showBack = false, onBack = {}) { contentPadding ->
+    AuthScaffold(title = stringResource(R.string.nav_login), showBack = false, onBack = {}) { contentPadding ->
         AuthFormContainer(contentPadding) {
             HeroHeader(
-                title = "Добро пожаловать",
-                subtitle = "Войди, чтобы открыть мониторинг, историю и персональные рекомендации.",
+                title = stringResource(R.string.auth_login_title),
+                subtitle = stringResource(R.string.auth_login_subtitle),
             )
             Spacer(modifier = Modifier.height(20.dp))
             GlassCard {
@@ -238,7 +255,7 @@ fun LoginScreen(
                     OutlinedTextField(
                         value = state.email,
                         onValueChange = viewModel::updateEmail,
-                        label = { Text("Email") },
+                        label = { Text(stringResource(R.string.auth_email)) },
                         modifier = Modifier.fillMaxWidth(),
                         keyboardOptions = KeyboardOptions(
                             keyboardType = KeyboardType.Email,
@@ -248,7 +265,7 @@ fun LoginScreen(
                     OutlinedTextField(
                         value = state.password,
                         onValueChange = viewModel::updatePassword,
-                        label = { Text("Пароль") },
+                        label = { Text(stringResource(R.string.auth_password)) },
                         modifier = Modifier.fillMaxWidth(),
                         visualTransformation = PasswordVisualTransformation(),
                         keyboardOptions = KeyboardOptions(
@@ -271,11 +288,23 @@ fun LoginScreen(
                         if (state.isLoading) {
                             CircularProgressIndicator(strokeWidth = 2.dp)
                         } else {
-                            Text("Войти")
+                            Text(stringResource(R.string.auth_sign_in_btn))
                         }
                     }
+                    OutlinedButton(
+                        onClick = {
+                            keyboard?.hide()
+                            val route = viewModel.continueAsGuest()
+                            onSuccess(route)
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        contentPadding = PaddingValues(vertical = 14.dp),
+                        enabled = !state.isLoading,
+                    ) {
+                        Text(stringResource(R.string.auth_continue_guest_btn))
+                    }
                     TextButton(onClick = onOpenRegister, modifier = Modifier.fillMaxWidth()) {
-                        Text("Создать аккаунт")
+                        Text(stringResource(R.string.auth_create_account_btn))
                     }
                 }
             }
@@ -291,11 +320,11 @@ fun RegisterScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
 
-    AuthScaffold(title = "Регистрация", showBack = true, onBack = onBack) { contentPadding ->
+    AuthScaffold(title = stringResource(R.string.nav_register), showBack = true, onBack = onBack) { contentPadding ->
         AuthFormContainer(contentPadding) {
             HeroHeader(
-                title = "Создание аккаунта",
-                subtitle = "Открой доступ к профилю, устройству и мониторингу за пару шагов.",
+                title = stringResource(R.string.auth_register_title),
+                subtitle = stringResource(R.string.auth_register_subtitle),
             )
             Spacer(modifier = Modifier.height(20.dp))
             GlassCard {
@@ -306,21 +335,21 @@ fun RegisterScreen(
                     OutlinedTextField(
                         value = state.email,
                         onValueChange = viewModel::updateEmail,
-                        label = { Text("Email") },
+                        label = { Text(stringResource(R.string.auth_email)) },
                         modifier = Modifier.fillMaxWidth(),
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
                     )
                     OutlinedTextField(
                         value = state.password,
                         onValueChange = viewModel::updatePassword,
-                        label = { Text("Пароль") },
+                        label = { Text(stringResource(R.string.auth_password)) },
                         modifier = Modifier.fillMaxWidth(),
                         visualTransformation = PasswordVisualTransformation(),
                     )
                     OutlinedTextField(
                         value = state.confirmPassword,
                         onValueChange = viewModel::updateConfirmPassword,
-                        label = { Text("Повтори пароль") },
+                        label = { Text(stringResource(R.string.auth_confirm_password)) },
                         modifier = Modifier.fillMaxWidth(),
                         visualTransformation = PasswordVisualTransformation(),
                     )
@@ -338,7 +367,7 @@ fun RegisterScreen(
                         if (state.isLoading) {
                             CircularProgressIndicator(strokeWidth = 2.dp)
                         } else {
-                            Text("Создать аккаунт")
+                            Text(stringResource(R.string.auth_register_btn))
                         }
                     }
                 }
@@ -364,11 +393,11 @@ fun VerificationScreen(
         }
     }
 
-    AuthScaffold(title = "Подтверждение", showBack = false, onBack = {}) { contentPadding ->
+    AuthScaffold(title = stringResource(R.string.nav_verification), showBack = false, onBack = {}) { contentPadding ->
         AuthFormContainer(contentPadding) {
             HeroHeader(
-                title = "Подтверждение почты",
-                subtitle = "Подтверди ${viewModel.currentEmail()} и продолжим настройку профиля.",
+                title = stringResource(R.string.auth_email_verification_title),
+                subtitle = stringResource(R.string.auth_email_verification_subtitle, viewModel.currentEmail()),
             )
             Spacer(modifier = Modifier.height(20.dp))
             GlassCard {
@@ -377,7 +406,7 @@ fun VerificationScreen(
                     verticalArrangement = Arrangement.spacedBy(16.dp),
                 ) {
                     Text(
-                        text = "Мы проверяем статус автоматически каждые пару секунд. Если письмо затерялось, отправим его еще раз.",
+                        text = stringResource(R.string.auth_email_not_verified),
                         style = MaterialTheme.typography.bodyLarge,
                     )
                     AuthMessage(state)
@@ -389,13 +418,13 @@ fun VerificationScreen(
                         },
                         modifier = Modifier.fillMaxWidth(),
                     ) {
-                        Text("Проверить сейчас")
+                        Text(stringResource(R.string.auth_check_verification_btn))
                     }
                     TextButton(
                         onClick = { viewModel.viewModelScope.launch { viewModel.resendVerification() } },
                         modifier = Modifier.fillMaxWidth(),
                     ) {
-                        Text("Отправить письмо еще раз")
+                        Text(stringResource(R.string.auth_resend_verification_btn))
                     }
                 }
             }
@@ -410,11 +439,11 @@ fun SetupProfileScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
 
-    AuthScaffold(title = "Профиль", showBack = false, onBack = {}) { contentPadding ->
+    AuthScaffold(title = stringResource(R.string.nav_profile), showBack = false, onBack = {}) { contentPadding ->
         AuthFormContainer(contentPadding) {
             HeroHeader(
-                title = "Заполним профиль",
-                subtitle = "Укажи имя и фамилию, чтобы завершить настройку аккаунта.",
+                title = stringResource(R.string.auth_setup_profile_title),
+                subtitle = stringResource(R.string.auth_setup_profile_subtitle),
             )
             Spacer(modifier = Modifier.height(20.dp))
             GlassCard {
@@ -425,13 +454,13 @@ fun SetupProfileScreen(
                     OutlinedTextField(
                         value = state.firstName,
                         onValueChange = viewModel::updateFirstName,
-                        label = { Text("Имя") },
+                        label = { Text(stringResource(R.string.auth_first_name)) },
                         modifier = Modifier.fillMaxWidth(),
                     )
                     OutlinedTextField(
                         value = state.lastName,
                         onValueChange = viewModel::updateLastName,
-                        label = { Text("Фамилия") },
+                        label = { Text(stringResource(R.string.auth_last_name)) },
                         modifier = Modifier.fillMaxWidth(),
                     )
                     AuthMessage(state)
@@ -448,7 +477,7 @@ fun SetupProfileScreen(
                         if (state.isLoading) {
                             CircularProgressIndicator(strokeWidth = 2.dp)
                         } else {
-                            Text("Сохранить профиль")
+                            Text(stringResource(R.string.auth_save_profile_btn))
                         }
                     }
                 }
@@ -472,7 +501,7 @@ private fun AuthScaffold(
                 navigationIcon = {
                     if (showBack) {
                         IconButton(onClick = onBack) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Назад")
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null)
                         }
                     }
                 },

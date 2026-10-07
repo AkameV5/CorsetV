@@ -1,6 +1,7 @@
 package com.akamev.corset.presentation.device
 
 import android.Manifest
+import com.akamev.corset.R
 import android.bluetooth.BluetoothAdapter
 import android.content.Context
 import android.content.Intent
@@ -60,13 +61,13 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 data class AddDeviceUiState(
-    val statusText: String = "Подготовь корсет и запусти поиск рядом с телефоном.",
+    val statusTextRes: Int = R.string.device_scanning_title,
     val isScanning: Boolean = false,
     val devices: List<ScannedDevice> = emptyList(),
 )
 
 data class DeviceConnectionUiState(
-    val statusText: String = "Подключаемся к устройству...",
+    val statusTextRes: Int = R.string.device_connecting_subtitle,
     val isLoading: Boolean = true,
     val isConnected: Boolean = false,
 )
@@ -88,7 +89,7 @@ class AddDeviceViewModel(
             _uiState.update {
                 it.copy(
                     isScanning = false,
-                    statusText = "Не удалось запустить поиск. Проверь Bluetooth и разрешения.",
+                    statusTextRes = R.string.device_connection_failed,
                 )
             }
         }
@@ -109,7 +110,7 @@ class AddDeviceViewModel(
                 _uiState.update { current ->
                     current.copy(
                         devices = devices,
-                        statusText = buildStatusText(isScanning = current.isScanning, devices = devices),
+                        statusTextRes = buildStatusTextRes(isScanning = current.isScanning, devices = devices),
                     )
                 }
             }
@@ -119,22 +120,22 @@ class AddDeviceViewModel(
                 _uiState.update { current ->
                     current.copy(
                         isScanning = isScanning,
-                        statusText = buildStatusText(isScanning = isScanning, devices = current.devices),
+                        statusTextRes = buildStatusTextRes(isScanning = isScanning, devices = current.devices),
                     )
                 }
             }
         }
     }
 
-    private fun buildStatusText(
+    private fun buildStatusTextRes(
         isScanning: Boolean,
         devices: List<ScannedDevice>,
-    ): String {
+    ): Int {
         return when {
-            isScanning && devices.isEmpty() -> "Ищем BLE-устройства рядом..."
-            isScanning -> "Поиск идет. Можно выбрать устройство сразу из списка."
-            devices.isNotEmpty() -> "Выбери нужное устройство и подключись прямо из приложения."
-            else -> "Устройства не найдены. Поднеси корсет ближе и повтори поиск."
+            isScanning && devices.isEmpty() -> R.string.device_scanning_title
+            isScanning -> R.string.device_available_list
+            devices.isNotEmpty() -> R.string.device_available_list
+            else -> R.string.device_no_found_subtitle
         }
     }
 
@@ -167,11 +168,7 @@ class DeviceConnectionViewModel(
         activeAddress = deviceAddress
         timeoutJob?.cancel()
         _uiState.value = DeviceConnectionUiState(
-            statusText = if (deviceAddress.isNullOrBlank()) {
-                "Подключаемся к сохраненному устройству..."
-            } else {
-                "Подключаемся к выбранному устройству..."
-            }
+            statusTextRes = R.string.device_connecting_subtitle,
         )
 
         val started = if (deviceAddress.isNullOrBlank()) {
@@ -183,7 +180,7 @@ class DeviceConnectionViewModel(
         if (!started) {
             _uiState.update {
                 it.copy(
-                    statusText = "Не удалось начать подключение. Проверь, что устройство включено и находится рядом.",
+                    statusTextRes = R.string.device_connection_failed,
                     isLoading = false,
                 )
             }
@@ -195,7 +192,7 @@ class DeviceConnectionViewModel(
             if (!_uiState.value.isConnected) {
                 _uiState.update {
                     it.copy(
-                        statusText = "Подключение заняло слишком много времени. Попробуй еще раз ближе к устройству.",
+                        statusTextRes = R.string.device_connection_failed,
                         isLoading = false,
                     )
                 }
@@ -210,7 +207,7 @@ class DeviceConnectionViewModel(
                     app.ensureBluetoothServiceRunning()
                     timeoutJob?.cancel()
                     _uiState.value = DeviceConnectionUiState(
-                        statusText = "Соединение установлено.",
+                        statusTextRes = R.string.device_connected_success,
                         isLoading = false,
                         isConnected = true,
                     )
@@ -250,7 +247,7 @@ fun AddDeviceScreen(
         if (BluetoothController.isBluetoothEnabled()) {
             requestPermissionsAndStartScan(context, viewModel) { showLocationDialog = true }
         } else {
-            Toast.makeText(context, "Bluetooth нужен для подключения.", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, context.getString(R.string.device_bluetooth_needed), Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -267,7 +264,7 @@ fun AddDeviceScreen(
                 bluetoothLauncher.launch(Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE))
             }
         } else {
-            Toast.makeText(context, "Нужны Bluetooth-разрешения для поиска устройства.", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, context.getString(R.string.device_bluetooth_perms_needed), Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -277,7 +274,7 @@ fun AddDeviceScreen(
         if (BluetoothController.isLocationEnabled(context)) {
             viewModel.startScan()
         } else {
-            Toast.makeText(context, "Для Android 11 и ниже нужно включить геолокацию.", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, context.getString(R.string.device_location_needed), Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -296,7 +293,7 @@ fun AddDeviceScreen(
     }
 
     Scaffold(
-        topBar = { TopAppBar(title = { Text("Добавление устройства") }) },
+        topBar = { TopAppBar(title = { Text(androidx.compose.ui.res.stringResource(R.string.device_add_title)) }) },
     ) { paddingValues ->
         CorsetBackground {
             Column(
@@ -308,17 +305,17 @@ fun AddDeviceScreen(
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 HeroHeader(
-                    title = "Подключим корсет",
-                    subtitle = "Поиск и подключение теперь запускаются прямо внутри приложения.",
+                    title = androidx.compose.ui.res.stringResource(R.string.device_add_title),
+                    subtitle = androidx.compose.ui.res.stringResource(R.string.device_add_subtitle),
                 )
                 GlassCard {
                     Column(
                         modifier = Modifier.padding(24.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
-                        Text("Как это работает", style = MaterialTheme.typography.titleLarge)
+                        Text(androidx.compose.ui.res.stringResource(R.string.device_how_it_works), style = MaterialTheme.typography.titleLarge)
                         Text(
-                            text = state.statusText,
+                            text = androidx.compose.ui.res.stringResource(state.statusTextRes),
                             style = MaterialTheme.typography.bodyLarge,
                         )
                         if (state.isScanning) {
@@ -344,18 +341,23 @@ fun AddDeviceScreen(
                             },
                             modifier = Modifier.fillMaxWidth(),
                         ) {
-                            Text(if (state.isScanning) "Идет поиск..." else "Найти устройства")
+                            Text(
+                                if (state.isScanning)
+                                    androidx.compose.ui.res.stringResource(R.string.device_scanning_title)
+                                else
+                                    androidx.compose.ui.res.stringResource(R.string.device_start_scan_btn)
+                            )
                         }
                         OutlinedButton(onClick = onBack, modifier = Modifier.fillMaxWidth()) {
-                            Text("Назад")
+                            Text(androidx.compose.ui.res.stringResource(R.string.device_back_btn))
                         }
                     }
                 }
 
                 if (state.devices.isEmpty() && !state.isScanning) {
                     EmptyState(
-                        title = "Пока ничего не найдено",
-                        subtitle = "Включи корсет, поднеси его ближе к телефону и повтори поиск.",
+                        title = androidx.compose.ui.res.stringResource(R.string.device_no_found_title),
+                        subtitle = androidx.compose.ui.res.stringResource(R.string.device_no_found_subtitle),
                     )
                 }
 
@@ -365,7 +367,7 @@ fun AddDeviceScreen(
                             modifier = Modifier.padding(24.dp),
                             verticalArrangement = Arrangement.spacedBy(12.dp),
                         ) {
-                            Text("Доступные устройства", style = MaterialTheme.typography.titleLarge)
+                            Text(androidx.compose.ui.res.stringResource(R.string.device_available_list), style = MaterialTheme.typography.titleLarge)
                             state.devices.forEach { device ->
                                 OutlinedButton(
                                     onClick = {
@@ -381,11 +383,11 @@ fun AddDeviceScreen(
                                         verticalArrangement = Arrangement.spacedBy(4.dp),
                                     ) {
                                         Text(
-                                            text = device.name ?: "Без имени",
+                                            text = device.name ?: androidx.compose.ui.res.stringResource(R.string.device_unnamed),
                                             style = MaterialTheme.typography.titleMedium,
                                         )
                                         Text(
-                                            text = buildDeviceSubtitle(device),
+                                            text = buildDeviceSubtitle(context, device),
                                             style = MaterialTheme.typography.bodyMedium,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         )
@@ -402,9 +404,9 @@ fun AddDeviceScreen(
     if (showLocationDialog) {
         AlertDialog(
             onDismissRequest = { showLocationDialog = false },
-            title = { Text("Нужно включить геолокацию") },
+            title = { Text(androidx.compose.ui.res.stringResource(R.string.device_location_dialog_title)) },
             text = {
-                Text("На Android 11 и ниже система требует включенную геолокацию для BLE-сканирования.")
+                Text(androidx.compose.ui.res.stringResource(R.string.device_location_dialog_desc))
             },
             confirmButton = {
                 Button(
@@ -413,12 +415,12 @@ fun AddDeviceScreen(
                         locationLauncher.launch(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS))
                     },
                 ) {
-                    Text("Открыть настройки")
+                    Text(androidx.compose.ui.res.stringResource(R.string.device_open_settings_btn))
                 }
             },
             dismissButton = {
                 OutlinedButton(onClick = { showLocationDialog = false }) {
-                    Text("Отмена")
+                    Text(androidx.compose.ui.res.stringResource(R.string.device_cancel_btn))
                 }
             },
         )
@@ -452,8 +454,8 @@ fun ConnectingScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             HeroHeader(
-                title = "Подключение",
-                subtitle = "Устанавливаем BLE-соединение и готовим телеметрию для мониторинга.",
+                title = androidx.compose.ui.res.stringResource(R.string.device_connecting_title),
+                subtitle = androidx.compose.ui.res.stringResource(R.string.device_connecting_subtitle),
             )
             GlassCard {
                 Column(
@@ -463,17 +465,17 @@ fun ConnectingScreen(
                     if (state.isLoading) {
                         CircularProgressIndicator()
                     }
-                    Text(state.statusText, style = MaterialTheme.typography.bodyLarge)
+                    Text(androidx.compose.ui.res.stringResource(state.statusTextRes), style = MaterialTheme.typography.bodyLarge)
                     if (!state.isConnected && !state.isLoading) {
                         OutlinedButton(
                             onClick = { viewModel.start(deviceAddress) },
                             modifier = Modifier.fillMaxWidth(),
                         ) {
-                            Text("Повторить")
+                            Text(androidx.compose.ui.res.stringResource(R.string.device_retry_btn))
                         }
                     }
                     OutlinedButton(onClick = onBack, modifier = Modifier.fillMaxWidth()) {
-                        Text("Назад")
+                        Text(androidx.compose.ui.res.stringResource(R.string.device_back_btn))
                     }
                 }
             }
@@ -517,10 +519,10 @@ private fun hasPermission(
     return ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
 }
 
-private fun buildDeviceSubtitle(device: ScannedDevice): String {
+private fun buildDeviceSubtitle(context: Context, device: ScannedDevice): String {
     val parts = mutableListOf(device.address)
     if (device.isSaved) {
-        parts += "сохранено ранее"
+        parts += context.getString(R.string.device_saved_previously)
     }
     if (device.rssi != Int.MIN_VALUE) {
         parts += "${device.rssi} dBm"

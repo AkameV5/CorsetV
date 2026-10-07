@@ -1,18 +1,34 @@
 package com.akamev.corset.presentation.chat
 
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material3.AssistChip
+import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -30,6 +46,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
@@ -88,8 +106,8 @@ class ChatViewModel(
 
     fun openSession(sessionId: String) {
         viewModelScope.launch {
-            val sessions = app.container.chatHistoryLocalDataSource.listSessions()
-            val messages = app.container.chatHistoryLocalDataSource.loadMessages(sessionId)
+            val sessions = app.container.chatRepository.listSessions()
+            val messages = app.container.chatRepository.loadMessages(sessionId)
             _uiState.update {
                 it.copy(
                     sessions = sessions,
@@ -102,8 +120,8 @@ class ChatViewModel(
 
     fun startNewChat() {
         viewModelScope.launch {
-            val sessionId = app.container.chatHistoryLocalDataSource.createSession()
-            val sessions = app.container.chatHistoryLocalDataSource.listSessions()
+            val sessionId = app.container.chatRepository.createSession()
+            val sessions = app.container.chatRepository.listSessions()
             _uiState.update {
                 it.copy(
                     sessions = sessions,
@@ -137,7 +155,7 @@ class ChatViewModel(
                 )
             }
 
-            app.container.chatHistoryLocalDataSource.renameSessionIfNeeded(sessionId, text)
+            app.container.chatRepository.renameSessionIfNeeded(sessionId, text)
 
             val answer = runCatching {
                 val context = buildPostureContext()
@@ -155,8 +173,10 @@ class ChatViewModel(
                     conversation = conversation,
                 )
             }.getOrElse { error ->
+                val isRu = Locale.getDefault().language == "ru"
                 error.message?.takeIf { it.isNotBlank() }
-                    ?: "Не удалось получить ответ. Проверь интернет и попробуй ещё раз."
+                    ?: if (isRu) "Не удалось получить ответ. Проверь интернет и попробуй ещё раз."
+                    else "Could not retrieve answer. Check internet connection and try again."
             }
 
             val assistantMessage = ChatMessage(
@@ -165,13 +185,13 @@ class ChatViewModel(
                 isUser = false,
             )
 
-            app.container.chatHistoryLocalDataSource.saveExchange(
+            app.container.chatRepository.saveExchange(
                 sessionId = sessionId,
                 query = text,
                 answer = assistantMessage.text,
             )
 
-            val sessions = app.container.chatHistoryLocalDataSource.listSessions()
+            val sessions = app.container.chatRepository.listSessions()
             _uiState.update {
                 it.copy(
                     sessions = sessions,
@@ -185,10 +205,10 @@ class ChatViewModel(
 
     private fun loadInitialState() {
         viewModelScope.launch {
-            val sessions = app.container.chatHistoryLocalDataSource.listSessions()
-            val activeSessionId = sessions.firstOrNull()?.id ?: app.container.chatHistoryLocalDataSource.createSession()
-            val updatedSessions = app.container.chatHistoryLocalDataSource.listSessions()
-            val messages = app.container.chatHistoryLocalDataSource.loadMessages(activeSessionId)
+            val sessions = app.container.chatRepository.listSessions()
+            val activeSessionId = sessions.firstOrNull()?.id ?: app.container.chatRepository.createSession()
+            val updatedSessions = app.container.chatRepository.listSessions()
+            val messages = app.container.chatRepository.loadMessages(activeSessionId)
 
             _uiState.value = ChatUiState(
                 sessions = updatedSessions,
@@ -200,25 +220,26 @@ class ChatViewModel(
     }
 
     private suspend fun ensureActiveSession(): String {
-        return _uiState.value.activeSessionId ?: app.container.chatHistoryLocalDataSource.createSession().also { sessionId ->
+        return _uiState.value.activeSessionId ?: app.container.chatRepository.createSession().also { sessionId ->
             _uiState.update { it.copy(activeSessionId = sessionId) }
         }
     }
 
     private suspend fun buildPostureContext(): String {
-        val history = app.container.postureHistoryLocalDataSource.loadHistory()
+        val history = app.container.postureRepository.loadHistory()
         val deviceState = app.container.bluetoothController.deviceState.value
         val threshold = app.container.appPreferences.getResolvedAlertAngle()
         val now = System.currentTimeMillis()
         val last24h = history.filter { it.timestamp >= now - DAY_MS }
         val previous24h = history.filter { it.timestamp in (now - 2 * DAY_MS) until (now - DAY_MS) }
+        val isRu = Locale.getDefault().language == "ru"
 
         return buildString {
-            appendLine(deviceContext(deviceState))
-            appendLine("Порог срабатывания: ${formatAngle(threshold)}.")
+            appendLine(deviceContext(deviceState, isRu))
+            appendLine(if (isRu) "Порог срабатывания: ${formatAngle(threshold)}." else "Alert threshold: ${formatAngle(threshold)}.")
 
             if (last24h.isEmpty()) {
-                appendLine("Данных за последние сутки пока мало.")
+                appendLine(if (isRu) "Данных за последние сутки пока мало." else "Limited telemetry data recorded in the last 24h.")
                 return@buildString
             }
 
@@ -233,23 +254,37 @@ class ChatViewModel(
             val worstHour = grouped.minByOrNull { (_, points) -> goodRatio(points, threshold) }?.key
             val bestHour = grouped.maxByOrNull { (_, points) -> goodRatio(points, threshold) }?.key
 
-            appendLine("Среднее отклонение за 24 часа: ${formatAngle(average)}.")
-            appendLine("Максимальное отклонение за 24 часа: ${formatAngle(maxAngle)}.")
-            appendLine("Доля времени выше порога: ${aboveThresholdPercent.roundToInt()}%.")
-            latest?.let { appendLine("Последнее значение: ${formatAngle(it)}.") }
-            bestHour?.let { appendLine("Лучший час: ${formatHourBucket(it)}.") }
-            worstHour?.let { appendLine("Самый слабый час: ${formatHourBucket(it)}.") }
-            appendLine("Размер выборки: ${last24h.size} точек.")
+            if (isRu) {
+                appendLine("Среднее отклонение за 24 часа: ${formatAngle(average)}.")
+                appendLine("Максимальное отклонение за 24 часа: ${formatAngle(maxAngle)}.")
+                appendLine("Доля времени выше порога: ${aboveThresholdPercent.roundToInt()}%.")
+                latest?.let { appendLine("Последнее значение: ${formatAngle(it)}.") }
+                bestHour?.let { appendLine("Лучший час: ${formatHourBucket(it)}.") }
+                worstHour?.let { appendLine("Самый слабый час: ${formatHourBucket(it)}.") }
+                appendLine("Размер выборки: ${last24h.size} точек.")
+            } else {
+                appendLine("24h average deviation: ${formatAngle(average)}.")
+                appendLine("24h maximum deviation: ${formatAngle(maxAngle)}.")
+                appendLine("Percentage of time above threshold: ${aboveThresholdPercent.roundToInt()}%.")
+                latest?.let { appendLine("Latest angle: ${formatAngle(it)}.") }
+                bestHour?.let { appendLine("Best hour: ${formatHourBucket(it)}.") }
+                worstHour?.let { appendLine("Weakest hour: ${formatHourBucket(it)}.") }
+                appendLine("Sample points: ${last24h.size}.")
+            }
 
             if (previous24h.isNotEmpty()) {
                 val previousAverage = previous24h.map { it.angle }.average().toFloat()
                 val diff = average - previousAverage
                 val direction = when {
-                    diff > 0.3f -> "хуже"
-                    diff < -0.3f -> "лучше"
-                    else -> "почти без изменений"
+                    diff > 0.3f -> if (isRu) "хуже" else "worse"
+                    diff < -0.3f -> if (isRu) "лучше" else "better"
+                    else -> if (isRu) "почти без изменений" else "unchanged"
                 }
-                appendLine("По сравнению с предыдущими сутками: $direction (${formatSignedAngle(diff)}).")
+                if (isRu) {
+                    appendLine("По сравнению с предыдущими сутками: $direction (${formatSignedAngle(diff)}).")
+                } else {
+                    appendLine("Compared to previous 24h: $direction (${formatSignedAngle(diff)}).")
+                }
             }
         }
     }
@@ -257,40 +292,122 @@ class ChatViewModel(
     private fun buildSystemInstruction(
         context: String,
     ): String {
-        return """
-            Ты умный AI-коуч приложения CorsetV.
-            Помогаешь разбирать осанку, рабочие привычки и телеметрию корсета.
-            Не пиши как бот, не повторяй одни и те же фразы, не называй себя врачом.
-            Не ставь диагнозы. Если есть боль, онемение или сильный дискомфорт, мягко советуй обратиться к врачу.
-            Отвечай естественным русским языком, без странных символов и канцелярита.
-            Если данных мало, честно скажи это.
-            Если пользователь спрашивает про прогресс, опирайся на контекст ниже.
-            Предпочтительный формат ответа:
-            1. Короткий вывод по данным
-            2. Практический совет на сейчас
-            3. Что проверить дальше
+        val isRu = Locale.getDefault().language == "ru"
+        if (!isRu) {
+            return """
+                You are a personal AI biomechanics and posture expert for the CorsetV smart tracker.
+                Your goal: help the user maintain spinal health, interpret deviation angles, and provide precise, actionable 30-60 second micro-interventions.
 
-            Контекст пользователя:
+                Telemetry criteria:
+                - 0°-4°: Ideal physiological posture, minimal spine load.
+                - 5°-7°: Growing extensor fatigue, shoulders beginning to roll forward.
+                - >8°-10°+: Pronounced slouch (slumping in chair, forward head posture).
+
+                Rules for answers:
+                1. Be concise, actionable, and direct. No fluff or generic clichés like "just sit straight".
+                2. Offer micro-actions for the desk:
+                   - Chin tuck (subtle retraction of chin without tilting head back);
+                   - Shoulder blades in back pockets (retracting and depressing scapulae);
+                   - Thoracic expansion via deep ribcage breathing;
+                   - Screen height check (top third of monitor at eye level).
+                3. Do NOT provide medical diagnoses. For severe or persistent pain, recommend consulting a doctor.
+                4. When telemetry data is provided in context, connect your advice to the numbers (average angle, worst interval, threshold).
+
+                STRICT FORMATTING RULES:
+                - NEVER use Markdown symbols: no asterisks (**bold**), no hash headers (#), no tables (|---|), no underscores (__).
+                - For lists, use simple hyphens (- ) or numbered lists (1., 2.).
+                - Put an empty line between paragraphs for readability.
+
+                Response structure:
+                • Analysis: brief summary of current angle or daily trend (1-2 sentences).
+                • 30-sec action: specific quick stretch or micro-posture correction.
+                • Ergonomics tip: adjustment for desk setup or break timing.
+
+                User and Corset Context:
+                $context
+            """.trimIndent()
+        }
+
+        return """
+            Ты персональный AI-эксперт по осанке и эргономике умного корсета CorsetV.
+            Твоя цель: помогать пользователю держать здоровую спину, анализировать углы наклона и давать точные, практичные микро-рекомендации на 30-60 секунд.
+
+            Критерии телеметрии:
+            - Отклонение 0°-4°: отличная физиологическая поза, минимальная нагрузка на позвоночник.
+            - Отклонение 5°-7°: нарастающая усталость разгибателей спины, плечи смещаются вперёд.
+            - Отклонение >8°-10°+: выраженная сутулость (сползание в кресле, сильный вынос шеи вперёд).
+
+            Правила ответов:
+            1. Будь конкретным и лаконичным, без "воды" и общих фраз вроде "просто держите спину прямо".
+            2. Предлагай микро-действия прямо на рабочем месте:
+               - Chin tuck (мягкое смещение подбородка назад без запрокидывания головы);
+               - Лопатки в задние карманы (сведение и опускание лопаток для включения ромбовидных мышц);
+               - Раскрытие грудной клетки через глубокий вдох в ребра;
+               - Проверка высоты экрана (верхняя треть монитора строго на уровне глаз).
+            3. Не ставь медицинских диагнозов. При жалобах на острую боль или онемение — мягко рекомендуй консультацию врача.
+            4. Если в контексте есть данные телеметрии, обязательно связывай свой ответ с цифрами (средний угол, худший час, порог).
+
+            СТРОГИЕ ПРАВИЛА ОФОРМЛЕНИЯ ТЕКСТА:
+            - КАТЕГОРИЧЕСКИ НЕ ИСПОЛЬЗУЙ Markdown-символы: никаких звёздочек (**жирный текст**), решёток (#), таблиц (|---|) и подчёркиваний (__).
+            - Для списков используй только простой дефис (- ) или цифры (1., 2.).
+            - Обязательно делай пустую строку между абзацами, чтобы текст легко читался и не слипался.
+
+            Структура ответа:
+            • Анализ: краткий вывод по текущему углу или тренду (1-2 емких предложения).
+            • Действие на 30 сек: конкретное быстрое упражнение или микро-коррекция позы.
+            • Что настроить: совет по рабочему месту или времени отдыха.
+
+            Контекст пользователя и корсета:
             $context
         """.trimIndent()
     }
 
-    private fun deviceContext(deviceState: DeviceState): String {
+    private fun deviceContext(deviceState: DeviceState, isRu: Boolean = true): String {
         return when {
             deviceState.isConnected -> {
-                val battery = deviceState.batteryLevel?.let { " Батарея: $it%." }.orEmpty()
-                "Корсет подключён.$battery"
+                val battery = deviceState.batteryLevel?.let {
+                    if (isRu) " Батарея: $it%." else " Battery: $it%."
+                }.orEmpty()
+                if (isRu) "Корсет подключён.$battery" else "Corset is connected.$battery"
             }
 
-            deviceState.hasSavedDevice -> "Корсет сохранён, но сейчас не подключён."
-            else -> "Корсет ещё не добавлен в приложение."
+            deviceState.hasSavedDevice -> if (isRu) "Корсет сохранён, но сейчас не подключён." else "Corset is saved, but currently disconnected."
+            else -> if (isRu) "Корсет ещё не добавлен в приложение." else "Corset has not been paired yet."
         }
     }
 
     private fun cleanupAnswer(answer: String): String {
         return answer
             .replace("В°", "°")
-            .replace("—", "-")
+            .replace("—", " — ")
+            // Убираем маркеры жирного шрифта и курсива (**текст** -> текст)
+            .replace(Regex("\\*\\*(.*?)\\*\\*"), "$1")
+            .replace("**", "")
+            .replace(Regex("__(.*?)__"), "$1")
+            .replace("__", "")
+            // Убираем решетки заголовков
+            .replace(Regex("(?m)^#{1,6}\\s*"), "")
+            // Убираем разделительные линии таблиц вида |---|---|
+            .replace(Regex("(?m)^\\|?\\s*[-:]{2,}\\s*\\|.*$"), "")
+            // Преобразуем строки таблиц в читаемый текст с тире
+            .lines()
+            .joinToString("\n") { line ->
+                val trimmed = line.trim()
+                if (trimmed.startsWith("|") && trimmed.endsWith("|")) {
+                    trimmed.split("|")
+                        .map { it.trim() }
+                        .filter { it.isNotBlank() }
+                        .joinToString(" — ")
+                } else {
+                    line
+                }
+            }
+            // Звездочки списков заменяем на аккуратную точку
+            .replace(Regex("(?m)^\\s*\\*\\s+"), "• ")
+            .replace(Regex("(?m)^\\s*-\\s+"), "• ")
+            // Разделяем слипшийся текст после знаков препинания: "шеи.Попробуйте" -> "шеи. Попробуйте"
+            .replace(Regex("([.!?:])(?=[А-ЯA-Z])"), "$1 ")
+            // Убираем множественные переносы строк, оставляя максимум 2
             .replace(Regex("\\n{3,}"), "\n\n")
             .trim()
     }
@@ -303,12 +420,24 @@ class ChatViewModel(
             initializer { ChatViewModel(app) }
         }
 
-        private fun defaultChatSuggestions(): List<String> = listOf(
-            "Что видно по моей осанке сегодня?",
-            "Почему сегодня могло стать хуже?",
-            "Когда у меня чаще всего начинается просадка?",
-            "Что сделать прямо сейчас, чтобы разгрузить шею?",
-        )
+        private fun defaultChatSuggestions(): List<String> {
+            val isRu = Locale.getDefault().language == "ru"
+            return if (isRu) {
+                listOf(
+                    "Что видно по моей осанке сегодня?",
+                    "Почему сегодня могло стать хуже?",
+                    "Когда у меня чаще всего начинается просадка?",
+                    "Что сделать прямо сейчас, чтобы разгрузить шею?",
+                )
+            } else {
+                listOf(
+                    "How does my posture look today?",
+                    "Why did my posture decline earlier?",
+                    "When does my posture drop most often?",
+                    "What 30-sec stretch helps neck fatigue right now?",
+                )
+            }
+        }
 
         private fun formatAngle(value: Float): String = "${value.roundToInt()}°"
 
@@ -346,7 +475,7 @@ class ChatViewModel(
 }
 
 private fun formatSessionTime(updatedAt: Long): String {
-    return SimpleDateFormat("d MMM, HH:mm", Locale.forLanguageTag("ru")).format(Date(updatedAt))
+    return SimpleDateFormat("d MMM, HH:mm", Locale.getDefault()).format(Date(updatedAt))
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -375,7 +504,10 @@ fun ChatScreen(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Text("Чаты", style = MaterialTheme.typography.titleLarge)
+                        Text(
+                            text = androidx.compose.ui.res.stringResource(com.akamev.corset.R.string.chat_drawer_title),
+                            style = MaterialTheme.typography.titleLarge,
+                        )
                         OutlinedButton(
                             onClick = {
                                 viewModel.startNewChat()
@@ -383,7 +515,7 @@ fun ChatScreen(
                             },
                         ) {
                             Icon(Icons.Filled.Add, contentDescription = null)
-                            Text("Новый")
+                            Text(androidx.compose.ui.res.stringResource(com.akamev.corset.R.string.chat_new_dialog))
                         }
                     }
 
@@ -424,7 +556,12 @@ fun ChatScreen(
                                             scope.launch { drawerState.close() }
                                         },
                                     ) {
-                                        Text(if (isActive) "Открыт" else "Открыть")
+                                        Text(
+                                            if (isActive)
+                                                androidx.compose.ui.res.stringResource(com.akamev.corset.R.string.chat_opened_btn)
+                                            else
+                                                androidx.compose.ui.res.stringResource(com.akamev.corset.R.string.chat_open_btn)
+                                        )
                                     }
                                 }
                             }
@@ -437,10 +574,13 @@ fun ChatScreen(
         Scaffold(
             topBar = {
                 TopAppBar(
-                    title = { Text("AI-чат") },
+                    title = { Text(androidx.compose.ui.res.stringResource(com.akamev.corset.R.string.chat_title)) },
                     navigationIcon = {
                         IconButton(onClick = { scope.launch { drawerState.open() } }) {
-                            Icon(Icons.Filled.Menu, contentDescription = "Чаты")
+                            Icon(
+                                Icons.Filled.Menu,
+                                contentDescription = androidx.compose.ui.res.stringResource(com.akamev.corset.R.string.chat_menu_desc),
+                            )
                         }
                     },
                 )
@@ -454,48 +594,65 @@ fun ChatScreen(
                         .padding(paddingValues)
                         .padding(horizontal = 16.dp, vertical = 12.dp),
                 ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        state.suggestions.take(2).forEach { suggestion ->
-                            OutlinedButton(
-                                onClick = { viewModel.useSuggestion(suggestion) },
-                                modifier = Modifier.weight(1f),
-                            ) {
-                                Text(suggestion)
-                            }
-                        }
-                    }
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 8.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        state.suggestions.drop(2).take(2).forEach { suggestion ->
-                            OutlinedButton(
-                                onClick = { viewModel.useSuggestion(suggestion) },
-                                modifier = Modifier.weight(1f),
-                            ) {
-                                Text(suggestion)
-                            }
-                        }
-                    }
                     LazyColumn(
                         modifier = Modifier.weight(1f),
-                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
                         contentPadding = PaddingValues(vertical = 12.dp),
                     ) {
                         if (state.messages.isEmpty()) {
                             item {
-                                ChatBubble(
-                                    message = ChatMessage(
-                                        id = 0L,
-                                        text = "Здесь можно вести отдельные диалоги. Начни новый вопрос, и я разберу статистику, найду слабые часы и подскажу, что делать дальше.",
-                                        isUser = false,
+                                Card(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(24.dp),
+                                    colors = CardDefaults.cardColors(
+                                        containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.88f),
                                     ),
-                                )
+                                ) {
+                                    Column(
+                                        modifier = Modifier.padding(20.dp),
+                                        verticalArrangement = Arrangement.spacedBy(14.dp),
+                                    ) {
+                                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                            Text(
+                                                text = androidx.compose.ui.res.stringResource(com.akamev.corset.R.string.chat_empty_title),
+                                                style = MaterialTheme.typography.titleLarge,
+                                                fontWeight = FontWeight.SemiBold,
+                                                color = MaterialTheme.colorScheme.onSurface,
+                                            )
+                                            Text(
+                                                text = androidx.compose.ui.res.stringResource(com.akamev.corset.R.string.chat_empty_subtitle),
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            )
+                                        }
+
+                                        Text(
+                                            text = androidx.compose.ui.res.stringResource(com.akamev.corset.R.string.chat_frequent_questions),
+                                            style = MaterialTheme.typography.labelMedium,
+                                            color = MaterialTheme.colorScheme.primary,
+                                            fontWeight = FontWeight.SemiBold,
+                                        )
+
+                                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                            state.suggestions.forEach { suggestion ->
+                                                Box(
+                                                    modifier = Modifier
+                                                        .fillMaxWidth()
+                                                        .clip(RoundedCornerShape(14.dp))
+                                                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f))
+                                                        .clickable { viewModel.useSuggestion(suggestion) }
+                                                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                                                ) {
+                                                    Text(
+                                                        text = suggestion,
+                                                        style = MaterialTheme.typography.bodyMedium,
+                                                        color = MaterialTheme.colorScheme.onSurface,
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         } else {
                             items(state.messages, key = { it.id }) { message ->
@@ -504,23 +661,54 @@ fun ChatScreen(
                         }
                     }
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.Bottom,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
                         OutlinedTextField(
                             value = state.input,
                             onValueChange = viewModel::updateInput,
                             modifier = Modifier.weight(1f),
-                            label = { Text("Сообщение") },
-                            placeholder = { Text("Например: что сегодня было самым слабым местом?") },
+                            shape = RoundedCornerShape(26.dp),
+                            placeholder = {
+                                Text(
+                                    androidx.compose.ui.res.stringResource(com.akamev.corset.R.string.chat_input_placeholder),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                )
+                            },
+                            maxLines = 4,
                         )
-                        Button(
+                        IconButton(
                             onClick = viewModel::sendMessage,
-                            enabled = !state.isSending,
-                            modifier = Modifier.padding(bottom = 4.dp),
+                            enabled = !state.isSending && state.input.isNotBlank(),
+                            modifier = Modifier
+                                .size(50.dp)
+                                .clip(CircleShape)
+                                .background(
+                                    if (!state.isSending && state.input.isNotBlank())
+                                        MaterialTheme.colorScheme.primary
+                                    else
+                                        MaterialTheme.colorScheme.surfaceVariant
+                                ),
                         ) {
-                            Text(if (state.isSending) "..." else "Отпр.")
+                            if (state.isSending) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(22.dp),
+                                    strokeWidth = 2.dp,
+                                    color = MaterialTheme.colorScheme.primary,
+                                )
+                            } else {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.Send,
+                                    contentDescription = androidx.compose.ui.res.stringResource(com.akamev.corset.R.string.chat_send_btn),
+                                    tint = if (state.input.isNotBlank())
+                                        MaterialTheme.colorScheme.onPrimary
+                                    else
+                                        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                                )
+                            }
                         }
                     }
                 }
@@ -533,24 +721,62 @@ fun ChatScreen(
 private fun ChatBubble(
     message: ChatMessage,
 ) {
+    val isUser = message.isUser
     Row(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = if (message.isUser) Arrangement.End else Arrangement.Start,
+        horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start,
     ) {
-        GlassCard(
-            modifier = Modifier.fillMaxWidth(if (message.isUser) 0.84f else 0.9f),
-        ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Text(
-                    text = if (message.isUser) "Ты" else "Corset AI",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = if (message.isUser) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary,
-                )
+        if (isUser) {
+            Box(
+                modifier = Modifier
+                    .widthIn(max = 280.dp)
+                    .clip(RoundedCornerShape(20.dp, 20.dp, 4.dp, 20.dp))
+                    .background(MaterialTheme.colorScheme.primary)
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+            ) {
                 Text(
                     text = message.text,
                     style = MaterialTheme.typography.bodyLarge,
-                    modifier = Modifier.padding(top = 6.dp),
+                    color = MaterialTheme.colorScheme.onPrimary,
                 )
+            }
+        } else {
+            Card(
+                modifier = Modifier.widthIn(max = 320.dp),
+                shape = RoundedCornerShape(20.dp, 20.dp, 20.dp, 4.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f),
+                ),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.18f)),
+                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(8.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.secondary),
+                        )
+                        Text(
+                            text = "Corset Coach",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.secondary,
+                        )
+                    }
+                    Text(
+                        text = message.text,
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                }
             }
         }
     }
