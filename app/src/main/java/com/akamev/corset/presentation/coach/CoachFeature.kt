@@ -177,7 +177,7 @@ class CoachViewModel(
     private fun loadHistory() {
         viewModelScope.launch {
             historyPoints.clear()
-            historyPoints.addAll(app.container.postureHistoryLocalDataSource.loadHistory())
+            historyPoints.addAll(app.container.postureRepository.loadHistory())
             _uiState.update { it.copy(chartPoints = computeChartPoints(it.selectedFilter)) }
         }
     }

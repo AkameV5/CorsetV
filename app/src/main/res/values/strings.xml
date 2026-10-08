@@ -249,7 +249,8 @@
 
     <!-- App Widget -->
     <string name="widget_name">CorsetV Status</string>
-    <string name="widget_description">Live posture deviation, battery level, and quick calibration.</string>
+    <string name="widget_description">Live posture deviation and battery level.</string>
+    <string name="widget_angle_label">Angle</string>
     <string name="widget_status_online">Online</string>
     <string name="widget_status_offline">Offline</string>
     <string name="widget_status_no_device">Not paired</string>
@@ -259,6 +260,6 @@
     <string name="widget_posture_waiting">Waiting for data…</string>
     <string name="widget_daily_score">Today: %1$d%%</string>
     <string name="widget_btn_calibrate">Calibrate</string>
-    <string name="widget_tap_to_open">Tap to open CorsetV</string>
+    <string name="widget_tap_to_open">CorsetV • Tap to open</string>
     <string name="widget_calibrated_toast">Corset calibrated successfully</string>
 </resources>

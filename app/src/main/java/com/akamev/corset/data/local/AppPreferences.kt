@@ -1,7 +1,6 @@
 package com.akamev.corset.data.local
 
 import android.content.Context
-import com.akamev.corset.domain.model.DailyStats
 import com.akamev.corset.domain.model.PostureAlertMode
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -10,7 +9,6 @@ import java.util.Locale
 class AppPreferences(context: Context) {
 
     private val appPrefs = context.getSharedPreferences(APP_PREFS, Context.MODE_PRIVATE)
-    private val dailyStatsPrefs = context.getSharedPreferences(DAILY_STATS_PREFS, Context.MODE_PRIVATE)
     private val bluetoothPrefs = context.getSharedPreferences(BLUETOOTH_PREFS, Context.MODE_PRIVATE)
 
     fun isCalibrationDone(): Boolean = appPrefs.getBoolean(KEY_CALIBRATION_DONE, false)
@@ -122,27 +120,6 @@ class AppPreferences(context: Context) {
             .apply()
     }
 
-    fun loadDailyStats(): DailyStats {
-        val today = todayKey()
-        val savedDate = dailyStatsPrefs.getString(KEY_LAST_DATE, "") ?: ""
-        if (savedDate != today) {
-            return DailyStats(dateKey = today, goodFrames = 0, totalFrames = 0)
-        }
-        return DailyStats(
-            dateKey = today,
-            goodFrames = dailyStatsPrefs.getLong(KEY_GOOD_FRAMES, 0),
-            totalFrames = dailyStatsPrefs.getLong(KEY_TOTAL_FRAMES, 0),
-        )
-    }
-
-    fun saveDailyStats(stats: DailyStats) {
-        dailyStatsPrefs.edit()
-            .putString(KEY_LAST_DATE, stats.dateKey)
-            .putLong(KEY_GOOD_FRAMES, stats.goodFrames)
-            .putLong(KEY_TOTAL_FRAMES, stats.totalFrames)
-            .apply()
-    }
-
     fun getSavedDeviceAddress(): String? = bluetoothPrefs.getString(KEY_SAVED_DEVICE_ADDRESS, null)
 
     fun saveDeviceAddress(address: String) {
@@ -180,7 +157,6 @@ class AppPreferences(context: Context) {
 
     private companion object {
         const val APP_PREFS = "AppPrefs"
-        const val DAILY_STATS_PREFS = "DailyStats"
         const val BLUETOOTH_PREFS = "BluetoothPrefs"
 
         const val KEY_CALIBRATION_DONE = "calibration_done"
@@ -191,9 +167,6 @@ class AppPreferences(context: Context) {
         const val KEY_PREFERRED_FOCUS_SESSION_MINUTES = "preferred_focus_session_minutes"
         const val KEY_FOCUS_SESSION_START_AT = "focus_session_start_at"
         const val KEY_FOCUS_SESSION_END_AT = "focus_session_end_at"
-        const val KEY_LAST_DATE = "last_date"
-        const val KEY_GOOD_FRAMES = "good_frames"
-        const val KEY_TOTAL_FRAMES = "total_frames"
         const val KEY_SAVED_DEVICE_ADDRESS = "saved_device_address"
         const val KEY_GUEST_MODE = "guest_mode"
         const val KEY_GUEST_FIRST_NAME = "guest_first_name"

@@ -3,8 +3,6 @@ package com.akamev.corset.core.di
 import android.content.Context
 import com.akamev.corset.data.bluetooth.BluetoothController
 import com.akamev.corset.data.local.AppPreferences
-import com.akamev.corset.data.local.ChatHistoryLocalDataSource
-import com.akamev.corset.data.local.PostureHistoryLocalDataSource
 import com.akamev.corset.data.local.database.AppDatabase
 import com.akamev.corset.data.remote.AiRemoteDataSource
 import com.akamev.corset.data.repository.AuthRepository
@@ -42,7 +40,5 @@ class AppContainer(context: Context) {
             dailySummaryDao = appDatabase.dailySummaryDao(),
         )
     }
-    val chatHistoryLocalDataSource by lazy { ChatHistoryLocalDataSource(appContext) }
-    val postureHistoryLocalDataSource by lazy { PostureHistoryLocalDataSource(appContext) }
     val aiRemoteDataSource by lazy { AiRemoteDataSource(httpClient) }
 }

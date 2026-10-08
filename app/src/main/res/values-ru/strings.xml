@@ -249,7 +249,8 @@
 
     <!-- App Widget -->
     <string name="widget_name">Статус CorsetV</string>
-    <string name="widget_description">Текущее отклонение осанки, заряд корсета и быстрая калибровка.</string>
+    <string name="widget_description">Текущее отклонение осанки и заряд корсета.</string>
+    <string name="widget_angle_label">Угол</string>
     <string name="widget_status_online">На связи</string>
     <string name="widget_status_offline">Не в сети</string>
     <string name="widget_status_no_device">Не привязан</string>
@@ -259,6 +260,6 @@
     <string name="widget_posture_waiting">Ожидание данных…</string>
     <string name="widget_daily_score">Сегодня: %1$d%%</string>
     <string name="widget_btn_calibrate">Калибровка</string>
-    <string name="widget_tap_to_open">Нажмите, чтобы открыть</string>
+    <string name="widget_tap_to_open">CorsetV • Нажмите для открытия</string>
     <string name="widget_calibrated_toast">Корсет откалиброван</string>
 </resources>

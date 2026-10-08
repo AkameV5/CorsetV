@@ -44,22 +44,10 @@ data class ScannedDevice(
     val isSaved: Boolean = false,
 )
 
-data class DailyStats(
-    val dateKey: String,
-    val goodFrames: Long,
-    val totalFrames: Long,
-)
-
 data class ChatMessage(
     val id: Long,
     val text: String,
     val isUser: Boolean,
-)
-
-data class ChatHistoryItem(
-    val timestamp: Long,
-    val query: String,
-    val answer: String,
 )
 
 data class ChatSessionSummary(
